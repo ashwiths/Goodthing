@@ -21,6 +21,7 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AnimatedLogo } from './AnimatedLogo';
 import { C } from '../constants/colors';
+import { useAuthStore } from '../src/store/authStore';
 
 // ── Glow Input ────────────────────────────────────────────────────────────────
 interface GlowInputProps {
@@ -75,8 +76,8 @@ function GlowInput({
 
 // ── Scale Button ──────────────────────────────────────────────────────────────
 function ScaleBtn({
-  onPress, children, delay = 0,
-}: { onPress: () => void; children: React.ReactNode; delay?: number }) {
+  onPress, children, delay = 0, disabled = false,
+}: { onPress: () => void; children: React.ReactNode; delay?: number; disabled?: boolean }) {
   const s       = useSharedValue(1);
   const opacity = useSharedValue(0);
   const slideY  = useSharedValue(12);
@@ -93,9 +94,9 @@ function ScaleBtn({
 
   return (
     <Pressable
-      onPressIn={()  => { s.value = withSpring(0.96, { damping: 15 }); }}
-      onPressOut={() => { s.value = withSpring(1.00, { damping: 15 }); }}
-      onPress={onPress}
+      onPressIn={()  => { if (!disabled) s.value = withSpring(0.96, { damping: 15 }); }}
+      onPressOut={() => { if (!disabled) s.value = withSpring(1.00, { damping: 15 }); }}
+      onPress={() => { if (!disabled) onPress(); }}
     >
       <Animated.View style={style}>{children}</Animated.View>
     </Pressable>
@@ -108,8 +109,12 @@ interface GlassLoginCardProps {
 }
 
 export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
+  const [isSignup, setIsSignup] = useState(false);
+  const [name,     setName]     = useState('');
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
+
+  const { login, signup, loading } = useAuthStore();
 
   // Card slide-up
   const cardOp = useSharedValue(0);
@@ -125,17 +130,41 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
     transform: [{ translateY: cardY.value }],
   }));
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
+    if (loading) return;
+
     if (!email.trim() || !password.trim()) {
       Alert.alert('Missing Fields', 'Please enter your email and password.');
       return;
     }
-    // Navigate to character selection after login
-    router.push('/character-select' as any);
+    
+    const result = await login(email.trim(), password.trim());
+    if (result.success) {
+      router.replace('/character-select' as any);
+    } else {
+      Alert.alert('Authentication Failed ❌', result.message);
+    }
+  };
+
+  const handleSignup = async () => {
+    if (loading) return;
+
+    if (!name.trim() || !email.trim() || !password.trim()) {
+      Alert.alert('Missing Fields', 'Please enter your name, email, and password.');
+      return;
+    }
+
+    const result = await signup(name.trim(), email.trim(), password.trim());
+    if (result.success) {
+      router.replace('/character-select' as any);
+    } else {
+      Alert.alert('Signup Failed ❌', result.message);
+    }
   };
 
   const handleGuest = () => {
-    Alert.alert('Guest Mode', 'Welcome to Withs! Continuing as Guest.');
+    Alert.alert('Guest Mode', 'Continuing in offline guest mode.');
+    router.replace('/character-select' as any);
   };
 
   const BASE = entryDelay + 200;
@@ -164,12 +193,26 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
         </View>
 
         {/* Heading */}
-        <Text style={styles.heading}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Continue your productivity journey.</Text>
+        <Text style={styles.heading}>{isSignup ? 'Create Account' : 'Welcome Back'}</Text>
+        <Text style={styles.subtitle}>
+          {isSignup ? 'Start your productivity journey with Zolo.' : 'Continue your productivity journey.'}
+        </Text>
 
         <View style={{ height: 24 }} />
 
         {/* Inputs */}
+        {isSignup && (
+          <>
+            <GlowInput
+              value={name}
+              onChangeText={setName}
+              placeholder="Full name"
+              delay={BASE - 40}
+            />
+            <View style={{ height: 12 }} />
+          </>
+        )}
+
         <GlowInput
           value={email}
           onChangeText={setEmail}
@@ -187,21 +230,27 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
         />
 
         {/* Forgot */}
-        <Pressable style={styles.forgotRow} onPress={() => Alert.alert('Reset Password', 'Password reset instructions sent!')}>
-          <Text style={styles.forgotText}>Forgot password?</Text>
-        </Pressable>
+        {!isSignup && (
+          <Pressable style={styles.forgotRow} onPress={() => Alert.alert('Reset Password', 'Password reset instructions sent!')}>
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          </Pressable>
+        )}
 
         <View style={{ height: 22 }} />
 
-        {/* Login button */}
-        <ScaleBtn onPress={handleLogin} delay={BASE + 180}>
+        {/* Action Button */}
+        <ScaleBtn onPress={isSignup ? handleSignup : handleLogin} delay={BASE + 180} disabled={loading}>
           <LinearGradient
             colors={[C.blue500, C.blue700]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.loginBtn}
+            style={[styles.loginBtn, loading && { opacity: 0.6 }]}
           >
-            <Text style={styles.loginBtnText}>Sign In</Text>
+            <Text style={styles.loginBtnText}>
+              {isSignup 
+                ? (loading ? 'Creating Account...' : 'Create Account') 
+                : (loading ? 'Signing In...' : 'Sign In')}
+            </Text>
           </LinearGradient>
         </ScaleBtn>
 
@@ -218,6 +267,23 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
             <Text style={styles.guestText}>Continue as Guest</Text>
           </View>
         </ScaleBtn>
+
+        <View style={{ height: 20 }} />
+
+        {/* Toggle Mode Link */}
+        <Pressable 
+          style={styles.toggleModeRow} 
+          onPress={() => {
+            setIsSignup(!isSignup);
+            setName('');
+            setEmail('');
+            setPassword('');
+          }}
+        >
+          <Text style={styles.toggleModeText}>
+            {isSignup ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+          </Text>
+        </Pressable>
       </View>
     </Animated.View>
   );
@@ -328,5 +394,16 @@ const styles = StyleSheet.create({
     color:       C.text70,
     fontSize:    15,
     fontWeight:  '500',
+  },
+  toggleModeRow: {
+    alignSelf: 'center',
+    marginTop: 10,
+    paddingVertical: 8,
+  },
+  toggleModeText: {
+    color: C.textBlue,
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
 });
