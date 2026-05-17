@@ -1,24 +1,42 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import '../global.css';
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as SplashScreen from 'expo-splash-screen';
+import { StyleSheet } from 'react-native';
+import { useAuthStore } from '../src/stores/authStore';
+import { DARK } from '../src/constants/colors';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  const isOnboarded = useAuthStore((s) => s.isOnboarded);
+
+  useEffect(() => {
+    // Hide splash after stores hydrate (give 300ms for zustand rehydration)
+    const timer = setTimeout(() => {
+      SplashScreen.hideAsync();
+    }, 400);
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+    <GestureHandlerRootView style={styles.root}>
+      <StatusBar style="light" backgroundColor={DARK.bg} />
+      <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
+        {!isOnboarded ? (
+          <Stack.Screen name="(auth)/onboarding" />
+        ) : (
+          <Stack.Screen name="(tabs)" />
+        )}
+        <Stack.Screen name="(auth)/app-lock" options={{ animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="+not-found" />
       </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: DARK.bg },
+});
