@@ -25,11 +25,10 @@ export default function RootLayout() {
     <GestureHandlerRootView style={styles.root}>
       <StatusBar style="light" backgroundColor={DARK.bg} />
       <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
-        {!isOnboarded ? (
-          <Stack.Screen name="(auth)/onboarding" />
-        ) : (
-          <Stack.Screen name="(tabs)" />
-        )}
+        <Stack.Screen name="entry" options={{ animation: 'fade' }} />
+        <Stack.Screen name="login" options={{ animation: 'fade' }} />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="(auth)/onboarding" />
         <Stack.Screen name="(auth)/app-lock" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="+not-found" />
       </Stack>
