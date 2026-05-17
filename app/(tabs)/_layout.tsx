@@ -1,85 +1,123 @@
+import React from 'react';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { useTheme } from '../../src/hooks/useTheme';
-import { DARK } from '../../src/constants/colors';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import Animated, {
+  useSharedValue, useAnimatedStyle, withSpring,
+} from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 
-function TabIcon({ icon, label, focused, color }: {
-  icon: string; label: string; focused: boolean; color: string;
-}) {
+type TabItem = {
+  name: string;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconActive: keyof typeof Ionicons.glyphMap;
+};
+
+const TABS: TabItem[] = [
+  { name: 'index',     label: 'Home',      icon: 'home-outline',      iconActive: 'home'      },
+  { name: 'tasks',     label: 'Tasks',     icon: 'list-outline',      iconActive: 'list'      },
+  { name: 'calendar',  label: 'Calendar',  icon: 'calendar-outline',  iconActive: 'calendar'  },
+  { name: 'analytics', label: 'Stats',     icon: 'bar-chart-outline', iconActive: 'bar-chart' },
+  { name: 'settings',  label: 'Settings',  icon: 'settings-outline',  iconActive: 'settings'  },
+];
+
+function TabButton({ tab, isFocused, onPress }: { tab: TabItem; isFocused: boolean; onPress: () => void }) {
+  const sc = useSharedValue(1);
+  const animated = useAnimatedStyle(() => ({ transform: [{ scale: sc.value }] }));
+
   return (
-    <View style={[styles.tabItem, focused && { gap: 2 }]}>
-      <Text style={[styles.tabIcon, focused && { textShadowColor: color, textShadowRadius: 10 }]}>
-        {icon}
-      </Text>
-      {focused && (
-        <View style={[styles.activeDot, { backgroundColor: color }]} />
-      )}
+    <Pressable
+      onPressIn={() => { sc.value = withSpring(0.88, { damping: 12 }); }}
+      onPressOut={() => { sc.value = withSpring(1.0, { damping: 12 }); }}
+      onPress={onPress}
+      style={tb.item}
+    >
+      <Animated.View style={[tb.inner, animated]}>
+        {isFocused ? (
+          <LinearGradient colors={['rgba(79,165,255,0.22)', 'rgba(43,107,255,0.12)']} style={tb.activeWrap}>
+            <Ionicons name={tab.iconActive} size={21} color="#87C4FF" />
+          </LinearGradient>
+        ) : (
+          <View style={tb.idleWrap}>
+            <Ionicons name={tab.icon} size={21} color="rgba(255,255,255,0.28)" />
+          </View>
+        )}
+        <Text style={[tb.label, isFocused && tb.labelActive]}>
+          {tab.label}
+        </Text>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+function FloatingTabBar({ state, navigation }: { state: any; navigation: any }) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={[tb.outerWrap, { paddingBottom: insets.bottom + 6 }]}>
+      {/* Outer glow */}
+      <View style={tb.outerGlow} />
+      <BlurView intensity={55} tint="dark" style={tb.blur}>
+        {/* Top shine line */}
+        <View style={tb.shine} />
+        <View style={tb.row}>
+          {TABS.map((tab, i) => (
+            <TabButton
+              key={tab.name}
+              tab={tab}
+              isFocused={state.index === i}
+              onPress={() => navigation.navigate(tab.name)}
+            />
+          ))}
+        </View>
+      </BlurView>
     </View>
   );
 }
 
-export default function TabsLayout() {
-  const { primary } = useTheme();
+const tb = StyleSheet.create({
+  outerWrap: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    paddingHorizontal: 14, paddingTop: 10,
+  },
+  outerGlow: {
+    position: 'absolute', bottom: 0, left: 40, right: 40, height: 1,
+    backgroundColor: 'rgba(79,165,255,0.22)',
+    shadowColor: '#4FA5FF', shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.4, shadowRadius: 20,
+  },
+  blur: {
+    borderRadius: 30, overflow: 'hidden',
+    borderWidth: 1, borderColor: 'rgba(79,165,255,0.16)',
+    backgroundColor: 'rgba(6,4,16,0.45)',
+  },
+  shine: {
+    position: 'absolute', top: 0, left: 32, right: 32, height: 1,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  row: { flexDirection: 'row', paddingTop: 10, paddingBottom: 6, paddingHorizontal: 4 },
+  item: { flex: 1, alignItems: 'center' },
+  inner: { alignItems: 'center', gap: 4 },
+  activeWrap: { width: 44, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(79,165,255,0.25)' },
+  idleWrap:   { width: 44, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  label:      { fontSize: 10, color: 'rgba(255,255,255,0.25)', fontWeight: '500' },
+  labelActive:{ color: '#87C4FF', fontWeight: '700' },
+});
 
-  const TAB_CONFIG = [
-    { name: 'index',   icon: '🏠', label: 'Home'    },
-    { name: 'habits',  icon: '✅', label: 'Habits'  },
-    { name: 'focus',   icon: '🎯', label: 'Focus'   },
-    { name: 'mood',    icon: '💭', label: 'Mood'    },
-    { name: 'profile', icon: '👤', label: 'Profile' },
-  ];
-
+export default function TabLayout() {
   return (
     <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle:    styles.tabBar,
-        tabBarBackground: () => (
-          <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-        ),
-        tabBarActiveTintColor:   primary,
-        tabBarInactiveTintColor: 'rgba(255,255,255,0.3)',
-        tabBarShowLabel: false,
-        tabBarHideOnKeyboard: true,
-      }}
+      tabBar={(props) => <FloatingTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
     >
-      {TAB_CONFIG.map((tab) => (
-        <Tabs.Screen
-          key={tab.name}
-          name={tab.name}
-          options={{
-            title: tab.label,
-            tabBarIcon: ({ focused, color }) => (
-              <TabIcon icon={tab.icon} label={tab.label} focused={focused} color={color} />
-            ),
-          }}
-        />
-      ))}
-      {/* Hide non-tab screens from tab bar */}
-      <Tabs.Screen name="journal"  options={{ href: null }} />
-      <Tabs.Screen name="settings" options={{ href: null }} />
+      <Tabs.Screen name="index" />
+      <Tabs.Screen name="tasks" />
+      <Tabs.Screen name="calendar" />
+      <Tabs.Screen name="analytics" />
+      <Tabs.Screen name="settings" />
     </Tabs>
   );
 }
-
-const styles = StyleSheet.create({
-  tabBar: {
-    position:        'absolute',
-    borderTopWidth:   1,
-    borderTopColor:  'rgba(255,255,255,0.06)',
-    backgroundColor: 'rgba(10,10,20,0.8)',
-    height:           70,
-    paddingBottom:    10,
-    elevation:        0,
-  },
-  tabItem: {
-    alignItems: 'center', justifyContent: 'center', gap: 0,
-  },
-  tabIcon: {
-    fontSize: 24,
-  },
-  activeDot: {
-    width: 4, height: 4, borderRadius: 2,
-  },
-});

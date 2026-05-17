@@ -7,6 +7,7 @@ import React, { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, Pressable, StyleSheet, Alert,
 } from 'react-native';
+import { router } from 'expo-router';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -18,7 +19,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
 import { AnimatedLogo } from './AnimatedLogo';
 import { C } from '../constants/colors';
 
@@ -130,12 +130,12 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
       Alert.alert('Missing Fields', 'Please enter your email and password.');
       return;
     }
-    // TODO: connect to auth backend
-    Alert.alert('Login', `Signing in as ${email.trim()}…`);
+    // Navigate to character selection after login
+    router.push('/character-select' as any);
   };
 
   const handleGuest = () => {
-    router.replace('/(tabs)' as any);
+    Alert.alert('Guest Mode', 'Welcome to Withs! Continuing as Guest.');
   };
 
   const BASE = entryDelay + 200;
@@ -187,7 +187,7 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
         />
 
         {/* Forgot */}
-        <Pressable style={styles.forgotRow}>
+        <Pressable style={styles.forgotRow} onPress={() => Alert.alert('Reset Password', 'Password reset instructions sent!')}>
           <Text style={styles.forgotText}>Forgot password?</Text>
         </Pressable>
 

@@ -1,6 +1,6 @@
 /**
  * AnimatedLogo.tsx
- * "Zolo" wordmark with "ash_withs" subtitle.
+ * "Withs" wordmark brand.
  * Pure code — zero image assets required.
  */
 import React, { useEffect } from 'react';
@@ -39,7 +39,6 @@ export function AnimatedLogo({
   const sloganOp  = useSharedValue(0);
   const sloganY   = useSharedValue(10);
   const shimmer   = useSharedValue(0);
-  const subOp     = useSharedValue(0);
 
   useEffect(() => {
     // Fade + spring scale
@@ -78,9 +77,6 @@ export function AnimatedLogo({
       )
     );
 
-    // Subtitle fade
-    subOp.value = withDelay(entryDelay + 600, withTiming(1, { duration: 900, easing: Easing.out(Easing.cubic) }));
-
     // Slogan reveal
     sloganOp.value = withDelay(entryDelay + 900, withTiming(1, { duration: 900, easing: Easing.out(Easing.cubic) }));
     sloganY.value  = withDelay(entryDelay + 900, withTiming(0, { duration: 800, easing: Easing.out(Easing.cubic) }));
@@ -107,12 +103,10 @@ export function AnimatedLogo({
     transform: [{ translateX: interpolate(shimmer.value, [0, 1], [-200, 200]) }],
   }));
 
-  const subStyle = useAnimatedStyle(() => ({ opacity: subOp.value }));
-
   const wordSize  = isLarge ? 72 : 30;
   const glowW     = isLarge ? 300 : 150;
   const glowH     = isLarge ? 90  : 50;
-  const letterSp  = isLarge ? 12  : 7;
+  const letterSp  = isLarge ? 4   : 2;
 
   return (
     <Animated.View style={[styles.root, containerStyle]}>
@@ -148,17 +142,6 @@ export function AnimatedLogo({
         </Animated.View>
       </View>
 
-      {/* ── "ash_withs" subtitle under the main word ─────────── */}
-      <Animated.Text
-        style={[
-          styles.subtitle,
-          { fontSize: isLarge ? 12 : 9, letterSpacing: isLarge ? 3.5 : 2 },
-          subStyle,
-        ]}
-      >
-        ash_withs
-      </Animated.Text>
-
       {/* Thin accent rule */}
       {isLarge && (
         <LinearGradient
@@ -172,7 +155,7 @@ export function AnimatedLogo({
       {/* ── Slogan ────────────────────────────────────────────── */}
       {showSlogan && (
         <Animated.Text style={[styles.slogan, sloganStyle]}>
-          FOCUS  •  GROW  •  BECOME
+          Ash_withs
         </Animated.Text>
       )}
     </Animated.View>
@@ -195,16 +178,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   word: {
-    fontWeight:         '200',
+    fontWeight:         '700',
     color:              '#FFFFFF',
     includeFontPadding: false,
-  },
-  subtitle: {
-    marginTop:     6,
-    fontWeight:    '400',
-    color:         C.text45,
-    textTransform: 'lowercase',
-    letterSpacing: 3.5,
   },
   shimmer: {
     position: 'absolute',
@@ -215,15 +191,15 @@ const styles = StyleSheet.create({
   underline: {
     height:    1,
     width:     '60%',
-    marginTop: 14,
+    marginTop: 8,
     opacity:   0.40,
   },
   slogan: {
-    marginTop:     20,
-    fontSize:      9.5,
+    marginTop:     10,
+    fontSize:      10.5,
     fontWeight:    '500',
     color:         C.text25,
-    letterSpacing: 6,
+    letterSpacing: 3,
     textTransform: 'uppercase',
   },
 });
