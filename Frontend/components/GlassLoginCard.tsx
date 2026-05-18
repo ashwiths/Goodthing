@@ -23,7 +23,7 @@ import { AnimatedLogo } from './AnimatedLogo';
 import { C } from '../constants/colors';
 import { useAuthStore } from '../src/store/authStore';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { secureStorage } from '../src/utils/secureStorage.js';
 // @ts-ignore
 import { useGoogleAuth } from '../src/services/googleAuth';
 
@@ -132,16 +132,18 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
         console.log('✅ FIREBASE GOOGLE LOGIN SUCCESS');
         console.log(user);
 
-        // Map Firebase user object to application's local user interface
+        // Map Firebase user object to application's standardized user interface
         const localUser = {
-          name: user.displayName || user.email?.split('@')[0] || 'User',
-          email: user.email,
-          photoURL: user.photoURL,
+          uid: user.uid,
+          fullName: user.displayName || user.email?.split('@')[0] || 'Productivity Warrior',
+          email: user.email || '',
+          avatar: user.photoURL || '',
+          provider: 'google',
         };
 
-        // Persist session to AsyncStorage
-        await AsyncStorage.setItem('token', 'firebase-google-auth-token');
-        await AsyncStorage.setItem('user', JSON.stringify(localUser));
+        // Persist session securely
+        await secureStorage.setItem('token', 'firebase-google-auth-token');
+        await secureStorage.setItem('user', JSON.stringify(localUser));
 
         // Update Zustand global store state
         useAuthStore.setState({
@@ -151,7 +153,7 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
 
         Alert.alert(
           'Google Sign-In Success! 🎉',
-          `Welcome, ${localUser.name}!\n\nEmail: ${localUser.email}`
+          `Welcome, ${localUser.fullName}!\n\nEmail: ${localUser.email}`
         );
 
         // Redirect to Home Tabs screen
@@ -241,13 +243,13 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
       <View style={styles.content}>
         {/* Logo small */}
         <View style={styles.logoRow}>
-          <AnimatedLogo size="small" showSlogan={false} entryDelay={entryDelay + 100} />
+          <AnimatedLogo size="small" showSlogan={false} animated={false} />
         </View>
 
         {/* Heading */}
         <Text style={styles.heading}>{isSignup ? 'Create Account' : 'Welcome Back'}</Text>
         <Text style={styles.subtitle}>
-          {isSignup ? 'Start your productivity journey with Zolo.' : 'Continue your productivity journey.'}
+          {isSignup ? 'Start your productivity journey with To|Do.' : 'Continue your productivity journey.'}
         </Text>
 
         <View style={{ height: 24 }} />

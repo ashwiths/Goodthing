@@ -1,8 +1,8 @@
 /**
  * app/(tabs)/settings.tsx  ·  To|Do — Premium Control Center
  */
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Alert, Modal, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -39,21 +39,36 @@ const sw = StyleSheet.create({
 });
 
 // ─── Setting Row Component ────────────────────────────────────────────────────
-function SettingRow({ icon, title, type = 'toggle', color, isLast = false, state, setState, options }: any) {
+function SettingRow({ icon, title, type = 'toggle', color, isLast = false, state, setState, options, onPress }: any) {
   const { P } = useAppTheme();
   const actCol = color || P.blue;
 
+  const content = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: type === 'segment' ? 12 : 0 }}>
+      <View style={[sr.iconBox, { backgroundColor: actCol + '20' }]}>
+        <Ionicons name={icon} size={16} color={actCol} />
+      </View>
+      <Text style={[sr.title, { color: P.white }]}>{title}</Text>
+      {type === 'toggle' && (
+        <GlassSwitch value={state} onValueChange={setState} activeColor={actCol} />
+      )}
+      {type === 'button' && (
+        <Ionicons name="chevron-forward" size={16} color={P.dimmer} />
+      )}
+    </View>
+  );
+
+  if (type === 'button') {
+    return (
+      <Pressable onPress={() => { fireHaptic('medium'); onPress && onPress(); }} style={[sr.wrap, !isLast && { borderBottomWidth: 1, borderBottomColor: P.borderSub }]}>
+        {content}
+      </Pressable>
+    );
+  }
+
   return (
     <View style={[sr.wrap, !isLast && { borderBottomWidth: 1, borderBottomColor: P.borderSub }]}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: type === 'segment' ? 12 : 0 }}>
-        <View style={[sr.iconBox, { backgroundColor: actCol + '20' }]}>
-          <Ionicons name={icon} size={16} color={actCol} />
-        </View>
-        <Text style={[sr.title, { color: P.white }]}>{title}</Text>
-        {type === 'toggle' && (
-          <GlassSwitch value={state} onValueChange={setState} activeColor={actCol} />
-        )}
-      </View>
+      {content}
       {type === 'segment' && (
         <View style={sr.segmentWrap}>
           {options.map((opt: any) => (
@@ -79,6 +94,7 @@ const sr = StyleSheet.create({
 // ─── Hero Pulse Avatar ────────────────────────────────────────────────────────
 function HeroAvatar() {
   const { P } = useAppTheme();
+  const { user } = useAuthStore();
   const pulse = useSharedValue(1);
   useEffect(() => {
     pulse.value = withRepeat(withSequence(
@@ -95,7 +111,9 @@ function HeroAvatar() {
       <Animated.View style={[av.glow2, { backgroundColor: P.purple }, animStyle]} />
       <View style={[av.core, { borderColor: P.white }]}>
         <LinearGradient colors={[P.blue, P.purple]} style={StyleSheet.absoluteFill} />
-        <Text style={[av.txt, { color: P.white }]}>A</Text>
+        <Text style={[av.txt, { color: P.white }]}>
+          {user?.fullName ? user.fullName.trim()[0].toUpperCase() : 'P'}
+        </Text>
       </View>
       <View style={[av.badge, { backgroundColor: P.medium, borderColor: P.bg }]}>
         <Ionicons name="flash" size={12} color={P.bg} />
@@ -163,10 +181,11 @@ export default function SettingsScreen() {
     theme, setTheme, accentColor, setAccentColor, glowIntensity, setGlowIntensity,
     smartAlerts, setSmartAlerts, soundEffects, setSoundEffects, focusReminders, setFocusReminders,
     hapticsLevel, setHapticsLevel, blurQuality, setBlurQuality, minimalMode, setMinimalMode,
-    deepWorkZone, setDeepWorkZone
+    deepWorkZone, setDeepWorkZone, showUserManual, setShowUserManual
   } = useSettingsStore();
 
-  const { logout } = useAuthStore();
+  const { logout, user } = useAuthStore();
+  const [manualOpen, setManualOpen] = useState(false);
 
   return (
     <View style={[s.root, { backgroundColor: P.bg }]}>
@@ -179,7 +198,7 @@ export default function SettingsScreen() {
         {/* ── Hero Profile ── */}
         <Animated.View entering={FadeInUp.delay(100).springify()} style={s.hero}>
           <HeroAvatar />
-          <Text style={[s.heroName, { color: P.white }]}>Ashil</Text>
+          <Text style={[s.heroName, { color: P.white }]}>{user?.fullName || 'Productivity Warrior'}</Text>
           <View style={[s.heroStatusBadge, { backgroundColor: P.blue + '1A', borderColor: P.border }]}>
             <View style={[s.heroStatusDot, { backgroundColor: P.blue, shadowColor: P.blue }]} />
             <Text style={[s.heroStatusTxt, { color: P.blue }]}>Focused Mode Active</Text>
@@ -199,7 +218,17 @@ export default function SettingsScreen() {
                   <Text style={[s.focusTitle, { color: P.white }]}>Deep Work Zone</Text>
                   <Text style={[s.focusSub, { color: P.dimmer }]}>Ambient sound • Distraction free</Text>
                 </View>
-                <GlassSwitch value={deepWorkZone} onValueChange={setDeepWorkZone} activeColor={P.purple} />
+                <GlassSwitch 
+                  value={deepWorkZone} 
+                  onValueChange={(val: boolean) => {
+                    setDeepWorkZone(val);
+                    if (val) {
+                      fireHaptic('medium');
+                      router.replace('/(tabs)/focus' as any);
+                    }
+                  }} 
+                  activeColor={P.purple} 
+                />
               </View>
               <FocusWave />
               <View style={s.focusControls}>
@@ -298,6 +327,22 @@ export default function SettingsScreen() {
           </View>
         </Animated.View>
 
+        {/* Focus Sanctuary & Guides */}
+        <Animated.View entering={FadeInUp.delay(650).springify()} style={s.module}>
+          <Text style={[s.modTitle, { color: P.dim }]}>Focus Sanctuary & Guides</Text>
+          <View style={[s.card, { borderColor: P.borderSub, backgroundColor: 'rgba(255,255,255,0.02)' }]}>
+            <BlurView intensity={getBlurIntensity(55)} tint="dark" style={StyleSheet.absoluteFill} />
+            <SettingRow 
+              icon="book-outline" 
+              title="Quick User Guide" 
+              type="button"
+              onPress={() => setManualOpen(true)}
+              color={P.blue} 
+              isLast 
+            />
+          </View>
+        </Animated.View>
+
         {/* Storage & Sync */}
         <Animated.View entering={FadeInUp.delay(700).springify()} style={s.module}>
           <Text style={[s.modTitle, { color: P.dim }]}>Storage & Cloud</Text>
@@ -347,6 +392,139 @@ export default function SettingsScreen() {
         </Animated.View>
 
       </ScrollView>
+
+      {/* ── Quick User Guide Modal ── */}
+      <Modal
+        visible={manualOpen}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setManualOpen(false)}
+      >
+        <View style={s.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setManualOpen(false)}>
+            <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFill} />
+          </Pressable>
+
+          <View style={s.modalSheet}>
+            <BlurView intensity={getBlurIntensity(55)} tint="dark" style={StyleSheet.absoluteFill} />
+            <View style={s.modalHeader}>
+              <View style={s.modalHandle} />
+            </View>
+
+            <View style={s.modalTitleRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Ionicons name="book" size={22} color="#87C4FF" />
+                <Text style={s.modalTitle}>ZenForge Quick User Guide</Text>
+              </View>
+              <Pressable style={s.modalCloseBtn} onPress={() => setManualOpen(false)}>
+                <Ionicons name="close" size={20} color={P.white} />
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={s.modalScroll} showsVerticalScrollIndicator={false}>
+              
+              {/* Introduction Card */}
+              <View style={s.guideIntroCard}>
+                <LinearGradient colors={['rgba(135,196,255,0.12)', 'transparent']} style={StyleSheet.absoluteFill} />
+                <Text style={s.guideWelcome}>Welcome to ZenForge! 🧘‍♂️</Text>
+                <Text style={s.guideSub}>Here is a quick overview of how to build atomic habits and stay consistent using your new workspace.</Text>
+              </View>
+
+              {/* Guide Bullet Points */}
+              <View style={{ gap: 16, marginTop: 10 }}>
+                <View style={s.guideRow}>
+                  <View style={[s.guideIconBox, { backgroundColor: 'rgba(78,205,196,0.08)' }]}>
+                    <Ionicons name="person-add-outline" size={16} color="#4ECDC4" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.guideRowTitle}>Account & Auth Sync</Text>
+                    <Text style={s.guideRowDesc}>Create your manual email account or sign in instantly with Google for automatic secure cloud sync.</Text>
+                  </View>
+                </View>
+
+                <View style={s.guideRow}>
+                  <View style={[s.guideIconBox, { backgroundColor: 'rgba(255,107,107,0.08)' }]}>
+                    <Ionicons name="add-circle-outline" size={16} color="#FF6B6B" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.guideRowTitle}>Add Tasks & Priorities</Text>
+                    <Text style={s.guideRowDesc}>Create tasks from the home screen and set their level:
+                      {"\n"}• <Text style={{ color: '#4ECDC4', fontWeight: '700' }}>Low</Text> (standard routine)
+                      {"\n"}• <Text style={{ color: '#F7DC6F', fontWeight: '700' }}>Medium</Text> (daily milestone)
+                      {"\n"}• <Text style={{ color: '#FF6B6B', fontWeight: '700' }}>High</Text> (critical priorities)
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={s.guideRow}>
+                  <View style={[s.guideIconBox, { backgroundColor: 'rgba(247,220,111,0.08)' }]}>
+                    <Ionicons name="flame" size={16} color="#F7DC6F" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.guideRowTitle}>Maintain Your Streak</Text>
+                    <Text style={s.guideRowDesc}>Complete your active tasks daily before midnight to maintain and grow your flame streak 🔥</Text>
+                  </View>
+                </View>
+
+                <View style={s.guideRow}>
+                  <View style={[s.guideIconBox, { backgroundColor: 'rgba(162,112,255,0.08)' }]}>
+                    <Ionicons name="headset-outline" size={16} color="#A270FF" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.guideRowTitle}>Deep Focus Sanctuary</Text>
+                    <Text style={s.guideRowDesc}>Use Deep Focus Mode paired with gorgeous, relaxing ambient sounds to get completely in the flow zone 🎧</Text>
+                  </View>
+                </View>
+
+                <View style={s.guideRow}>
+                  <View style={[s.guideIconBox, { backgroundColor: 'rgba(135,196,255,0.08)' }]}>
+                    <Ionicons name="stats-chart" size={16} color="#87C4FF" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.guideRowTitle}>Productivity Hub Metrics</Text>
+                    <Text style={s.guideRowDesc}>Track your live stats directly inside the Productivity Hub:
+                      {"\n"}• Productivity score
+                      {"\n"}• Active daily streaks
+                      {"\n"}• Deep focus hours
+                      {"\n"}• Unlocked achievements
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={s.guideRow}>
+                  <View style={[s.guideIconBox, { backgroundColor: 'rgba(78,205,196,0.08)' }]}>
+                    <Ionicons name="trophy-outline" size={16} color="#4ECDC4" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.guideRowTitle}>Achievements & Levels</Text>
+                    <Text style={s.guideRowDesc}>Unlock consistency badges and level up your status by staying persistent and completing goals.</Text>
+                  </View>
+                </View>
+
+                <View style={s.guideRow}>
+                  <View style={[s.guideIconBox, { backgroundColor: 'rgba(255,255,255,0.05)' }]}>
+                    <Ionicons name="cloud-done-outline" size={16} color="#FFF" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.guideRowTitle}>Automatic Cloud Save</Text>
+                    <Text style={s.guideRowDesc}>Your history, scores, and task progress are automatically backed up to secure MongoDB cloud databases.</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Motivational Footer */}
+              <View style={s.guideFooter}>
+                <Text style={s.guideFooterTxt}>Stay focused. Stay consistent. Own your tomorrow 🚀</Text>
+              </View>
+
+              <Pressable style={s.gotItBtn} onPress={() => setManualOpen(false)}>
+                <LinearGradient colors={[P.blue, P.blue2]} style={StyleSheet.absoluteFill} />
+                <Text style={s.gotItBtnTxt}>Let's Go!</Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -396,4 +574,37 @@ const s = StyleSheet.create({
   // Logout
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 56, borderRadius: 28, borderWidth: 1, overflow: 'hidden' },
   logoutTxt: { fontSize: 16, fontWeight: '700', letterSpacing: 0.3 },
+
+  // Guide Modal Styles
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalSheet: {
+    height: 600,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(10,18,34,0.7)',
+    overflow: 'hidden'
+  },
+  modalHeader: { alignItems: 'center', paddingVertical: 10 },
+  modalHandle: { width: 44, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.2)' },
+  modalTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
+  modalTitle: { fontSize: 17, fontWeight: '800', color: '#FFF', letterSpacing: -0.4 },
+  modalCloseBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  modalScroll: { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 50 },
+  
+  guideIntroCard: { padding: 18, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', overflow: 'hidden', marginBottom: 20 },
+  guideWelcome: { fontSize: 16, fontWeight: '800', color: '#FFF', marginBottom: 6 },
+  guideSub: { fontSize: 12, color: 'rgba(255,255,255,0.65)', lineHeight: 17 },
+  
+  guideRow: { flexDirection: 'row', gap: 14, marginBottom: 14 },
+  guideIconBox: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  guideRowTitle: { fontSize: 13.5, fontWeight: '800', color: '#FFF', marginBottom: 3 },
+  guideRowDesc: { fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 17 },
+  
+  guideFooter: { marginVertical: 24, paddingVertical: 14, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.06)', alignItems: 'center' },
+  guideFooterTxt: { fontSize: 12.5, fontWeight: '700', color: '#87C4FF', textAlign: 'center' },
+  
+  gotItBtn: { height: 50, borderRadius: 16, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+  gotItBtnTxt: { fontSize: 14, fontWeight: '800', color: '#FFF', letterSpacing: 0.5 },
 });

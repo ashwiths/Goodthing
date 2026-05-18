@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   startFocus,
+  endFocus,
   completeFocus,
   getFocusStats,
   getFocusHistory,
@@ -15,6 +16,7 @@ const router = express.Router();
 router.use(protect);
 
 router.post('/start', startFocus);
+router.post('/end', endFocus);
 router.post('/complete', completeFocus);
 router.get('/stats', getFocusStats);
 router.get('/history', getFocusHistory);

@@ -41,6 +41,23 @@ const userStatsSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  totalFocusMinutes: {
+    type: Number,
+    default: 0,
+  },
+  longestFocusSession: {
+    type: Number,
+    default: 0,
+  },
+  totalFocusSessions: {
+    type: Number,
+    default: 0,
+  },
+  ambienceBreakdown: {
+    type: Map,
+    of: Number,
+    default: {},
+  },
   unlockedAchievements: [
     {
       achievementId: { type: String, required: true },

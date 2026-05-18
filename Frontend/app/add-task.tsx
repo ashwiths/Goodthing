@@ -265,8 +265,28 @@ export default function AddTaskScreen() {
   
     // Chips
     chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-    chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: P.borderSub },
-    chipActive: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: P.blue },
+    chip: {
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 20,
+      backgroundColor: 'rgba(255,255,255,0.03)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.06)',
+      overflow: 'hidden'
+    },
+    chipActive: {
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 20,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.28)',
+      shadowColor: P.blue,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.45,
+      shadowRadius: 10,
+      elevation: 6
+    },
     chipTxt: { fontSize: 14, fontWeight: '600', color: P.dimmer },
     chipTxtActive: { fontSize: 14, fontWeight: '700', color: P.white },
   
@@ -337,7 +357,7 @@ export default function AddTaskScreen() {
               const color = p === 'High' ? P.high : p === 'Medium' ? P.medium : P.low;
               return (
                 <Pressable key={p} onPress={() => { fireHaptic('light'); setPriority(p); }}>
-                  <View style={[active ? s.chipActive : s.chip, active && { borderColor: color }]}>
+                  <View style={[active ? s.chipActive : s.chip, active && { borderColor: color, shadowColor: color }]}>
                     {active && <BlurView intensity={getBlurIntensity(30)} tint="dark" style={StyleSheet.absoluteFill} />}
                     {active && <LinearGradient colors={[color + '40', 'transparent']} style={StyleSheet.absoluteFill} />}
                     <Text style={[active ? s.chipTxtActive : s.chipTxt, active && { color }]}>{p}</Text>

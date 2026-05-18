@@ -4,8 +4,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
-  TextInput, Dimensions, StatusBar, Alert,
+  TextInput, Dimensions, StatusBar, Alert, Modal, Platform,
 } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import Animated, {
   useSharedValue, useAnimatedStyle, withTiming,
   withDelay, withSpring, withRepeat, withSequence, Easing,
@@ -19,6 +20,7 @@ import { CinematicBackground } from '../../components/CinematicBackground';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { fireHaptic, fireSuccessHaptic } from '../../utils/haptics';
 import { useTaskStore } from '../../src/store/taskStore';
+import { useAuthStore } from '../../src/store/authStore';
 import { ActivityIndicator } from 'react-native';
 
 const { width: W } = Dimensions.get('window');
@@ -259,6 +261,15 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { P, getBlurIntensity, getGlowStyles, minimalMode } = useAppTheme();
   const { tasks, fetchTasks, loading, updateTask, deleteTask } = useTaskStore();
+  const { user } = useAuthStore();
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return 'Good morning';
+    if (hour >= 12 && hour < 17) return 'Good afternoon';
+    if (hour >= 17 && hour < 22) return 'Good evening';
+    return 'Good night';
+  };
 
   useEffect(() => {
     fetchTasks();
@@ -270,7 +281,7 @@ export default function HomeScreen() {
     radial:  { position: 'absolute', borderRadius: 999 },
   
     // Header
-    header: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 14 },
+    header: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 16 },
     greet:  { fontSize: 13, color: P.dim, fontWeight: '500' },
     hero:   { fontSize: 30, fontWeight: '800', color: P.white, lineHeight: 36, letterSpacing: -0.8 },
     heroSub:{ fontSize: 12, color: P.dimmer, fontWeight: '400', marginTop: 2 },
@@ -280,13 +291,13 @@ export default function HomeScreen() {
     avatarTxt: { fontSize: 15, fontWeight: '800', color: P.white },
   
     // Pending pill
-    pendingPill: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 20, paddingHorizontal: 2 },
+    pendingPill: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 26, paddingHorizontal: 2 },
     pendingDot:  { width: 7, height: 7, borderRadius: 4 },
     pendingTxt:  { fontSize: 12, color: P.dim, fontWeight: '500' },
   
     // Input
     inputWrap: {
-      borderRadius: 20, overflow: 'hidden', marginBottom: 18,
+      borderRadius: 20, overflow: 'hidden', marginBottom: 26,
       borderWidth: 1, borderColor: P.border,
       backgroundColor: 'rgba(10,18,34,0.5)',
       ...getGlowStyles(0.18, 24)
@@ -295,31 +306,132 @@ export default function HomeScreen() {
     input: { flex: 1, fontSize: 14, color: P.white, fontWeight: '500' },
   
     // Chips
-    chipActive:   { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 18 },
-    chip:         { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: P.borderSub },
-    chipTxtActive:{ fontSize: 13, fontWeight: '700', color: P.white },
-    chipTxt:      { fontSize: 13, fontWeight: '500', color: P.dimmer },
+    chipActive: {
+      paddingHorizontal: 16,
+      paddingVertical: 7,
+      borderRadius: 18,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.28)',
+      shadowColor: P.blue,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.45,
+      shadowRadius: 10,
+      elevation: 6
+    },
+    chip: {
+      paddingHorizontal: 16,
+      paddingVertical: 7,
+      borderRadius: 18,
+      backgroundColor: 'rgba(255,255,255,0.03)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.06)',
+      overflow: 'hidden'
+    },
+    chipTxtActive: { fontSize: 13, fontWeight: '700', color: P.white },
+    chipTxt:       { fontSize: 13, fontWeight: '500', color: P.dimmer },
   
     // Stats
-    sectionLabel: { fontSize: 15, fontWeight: '700', color: 'rgba(255,255,255,0.75)', marginBottom: 12 },
-    sectionRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 12 },
-    statsRow:     { flexDirection: 'row', marginBottom: 12 },
+    sectionLabel: { fontSize: 15, fontWeight: '700', color: 'rgba(255,255,255,0.75)', marginBottom: 14 },
+    sectionRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 14 },
+    statsRow:     { flexDirection: 'row', marginBottom: 16 },
     countBadge:   { width: 24, height: 24, borderRadius: 8, backgroundColor: P.blue + '20', borderWidth: 1, borderColor: P.border, alignItems: 'center', justifyContent: 'center' },
     countTxt:     { fontSize: 11, fontWeight: '800', color: P.blue },
   
     // Progress bar
     progressCard: {
       flexDirection: 'row', alignItems: 'center', gap: 14,
-      borderRadius: 16, overflow: 'hidden', paddingHorizontal: 18, paddingVertical: 14, marginBottom: 28,
+      borderRadius: 16, overflow: 'hidden', paddingHorizontal: 18, paddingVertical: 14, marginBottom: 32,
       borderWidth: 1, borderColor: P.borderSub,
       backgroundColor: 'rgba(12,6,24,0.4)',
     },
     progressTrack: { flex: 1, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.07)', overflow: 'hidden' },
     progressFill:  { height: '100%', borderRadius: 3 },
     progressPct:   { fontSize: 13, fontWeight: '800', color: P.blue, minWidth: 38, textAlign: 'right' },
+
+    // Modal Overlay and Sheet
+    modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+    modalSheet: {
+      height: 520,
+      borderTopLeftRadius: 32,
+      borderTopRightRadius: 32,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.12)',
+      backgroundColor: 'rgba(10,18,34,0.7)',
+      overflow: 'hidden'
+    },
+    modalHeader: { alignItems: 'center', paddingVertical: 10 },
+    modalHandle: { width: 44, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.2)' },
+    modalTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
+    modalTitle: { fontSize: 18, fontWeight: '800', color: P.white, letterSpacing: -0.5 },
+    modalCloseBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+    modalScroll: { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 50 },
+    statusBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 14, backgroundColor: 'rgba(78,205,196,0.06)', borderWidth: 1, borderColor: 'rgba(78,205,196,0.18)', marginBottom: 20 },
+    statusBannerTxt: { fontSize: 11, color: '#4ECDC4', fontWeight: '500', flex: 1, lineHeight: 15 },
+    emptyNotifCard: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, paddingHorizontal: 20, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.01)', borderStyle: 'dashed', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+    emptyNotifTitle: { fontSize: 14, fontWeight: '700', color: P.white, marginTop: 12, marginBottom: 4 },
+    emptyNotifSub: { fontSize: 11.5, color: P.dimmer, textAlign: 'center', lineHeight: 16 },
+    notifCard: { flexDirection: 'row', gap: 12, padding: 14, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', marginBottom: 10 },
+    notifCardIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(255,107,107,0.08)', alignItems: 'center', justifyContent: 'center' },
+    notifCardTitle: { fontSize: 13, fontWeight: '700', color: P.white, marginBottom: 2 },
+    notifCardBody: { fontSize: 11.5, color: P.dim, lineHeight: 15 },
+    notifCardMeta: { fontSize: 10, fontWeight: '600', color: P.dimmer, marginTop: 4 },
+    testBtn: { height: 50, borderRadius: 16, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, borderWidth: 1, borderColor: 'rgba(135,196,255,0.2)' },
+    testBtnTxt: { fontSize: 13.5, fontWeight: '700', color: '#87C4FF' },
+    clearBtn: { height: 50, borderRadius: 16, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, borderWidth: 1, borderColor: 'rgba(255,107,107,0.15)', backgroundColor: 'rgba(255,107,107,0.02)' },
+    clearBtnTxt: { fontSize: 13.5, fontWeight: '700', color: '#FF6B6B' },
   }), [P, getGlowStyles]);
 
   const [activeChip, setChip]     = useState('Focus');
+  const [notifModalOpen, setNotifModalOpen] = useState(false);
+  const [scheduledNotifs, setScheduledNotifs] = useState<any[]>([]);
+
+  const fetchScheduledNotifications = async () => {
+    try {
+      if (Platform.OS !== 'web') {
+        const list = await Notifications.getAllScheduledNotificationsAsync();
+        setScheduledNotifs(list);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch scheduled notifications:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (notifModalOpen) {
+      fetchScheduledNotifications();
+    }
+  }, [notifModalOpen]);
+
+  const handleTestAlert = async () => {
+    fireHaptic('medium');
+    if (Platform.OS === 'web') {
+      Alert.alert("Web Platform", "Notifications are skipped on Web.");
+      return;
+    }
+    // Schedule a notification in 2 seconds
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Test Smart Alert ⚡",
+        body: "Your ZenForge Notification system is working flawlessly!",
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 2,
+      },
+    });
+    Alert.alert("Success 🎉", "Test notification scheduled! Close the app or stay on this page; it will trigger in 2 seconds.");
+    setTimeout(fetchScheduledNotifications, 2500); // refresh list
+  };
+
+  const handleClearNotifications = async () => {
+    fireHaptic('heavy');
+    if (Platform.OS === 'web') return;
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    Alert.alert("Success 🗑️", "All scheduled notifications cancelled successfully.");
+    fetchScheduledNotifications();
+  };
 
   const done    = tasks.filter((t: any) => t.completed).length;
   const pending = tasks.filter((t: any) => !t.completed).length;
@@ -353,14 +465,19 @@ export default function HomeScreen() {
     );
   };
 
-  const displayTasks = tasks.map((t: any) => ({
-    id: t._id,
-    title: t.title,
-    time: t.dueDate ? new Date(t.dueDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Today',
-    accent: t.priority === 'High' ? '#FF6B6B' : (t.priority === 'Medium' ? '#F7DC6F' : '#4ECDC4'),
-    completed: t.completed,
-    tag: t.category || 'General',
-  }));
+  const displayTasks = tasks
+    .filter((t: any) => {
+      if (activeChip === 'Focus') return true; // Focus acts as the default 'Show All' view
+      return (t.category || 'General').toLowerCase() === activeChip.toLowerCase();
+    })
+    .map((t: any) => ({
+      id: t._id,
+      title: t.title,
+      time: t.dueDate ? new Date(t.dueDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Today',
+      accent: t.priority === 'High' ? '#FF6B6B' : (t.priority === 'Medium' ? '#F7DC6F' : '#4ECDC4'),
+      completed: t.completed,
+      tag: t.category || 'General',
+    }));
 
   return (
     <View style={s.root}>
@@ -379,17 +496,19 @@ export default function HomeScreen() {
         <FadeUp delay={0}>
           <View style={s.header}>
             <View style={{ flex: 1, gap: 6 }}>
-              <Text style={s.greet}>Good evening, Ashil 👋</Text>
-              <Text style={s.hero}>Own your{'\n'}tomorrow.</Text>
+              <Text style={s.greet}>{getGreeting()}, {user?.fullName || 'Productivity Warrior'} 👋🏽</Text>
+              <Text style={s.hero}>Hello,</Text>
               <Text style={s.heroSub}>Stay focused and finish strong.</Text>
             </View>
             <View style={{ gap: 10, alignItems: 'center' }}>
-              <Pressable style={s.iconBtn}>
+              <Pressable style={s.iconBtn} onPress={() => { fireHaptic('medium'); setNotifModalOpen(true); }}>
                 <Ionicons name="notifications-outline" size={19} color={P.dim} />
                 <View style={s.notifDot} />
               </Pressable>
               <LinearGradient colors={[P.blue, P.blue2]} style={s.avatar}>
-                <Text style={s.avatarTxt}>A</Text>
+                <Text style={s.avatarTxt}>
+                  {user?.fullName ? user.fullName.trim()[0].toUpperCase() : 'P'}
+                </Text>
               </LinearGradient>
             </View>
           </View>
@@ -418,11 +537,12 @@ export default function HomeScreen() {
 
         {/* ── Chips ───────────────────────────────────────── */}
         <FadeUp delay={180}>
+          <View style={{ marginBottom: 26 }}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 8 }}>
               {CHIPS.map((c, i) => {
-                const active = i === 0;
+                const active = c === activeChip;
                 return (
-                  <Pressable key={c} onPress={() => fireHaptic('light')}>
+                  <Pressable key={c} onPress={() => { fireHaptic('medium'); setChip(c); }}>
                     <View style={active ? s.chipActive : s.chip}>
                       {active && <BlurView intensity={getBlurIntensity(40)} tint="dark" style={StyleSheet.absoluteFill} />}
                       {active && <LinearGradient colors={[P.blue, P.blue2]} style={StyleSheet.absoluteFill} />}
@@ -432,6 +552,7 @@ export default function HomeScreen() {
                 );
               })}
             </ScrollView>
+          </View>
         </FadeUp>
 
         {/* ── Progress section label ───────────────────────── */}
@@ -490,6 +611,97 @@ export default function HomeScreen() {
         </FadeUp>
 
       </ScrollView>
+
+      {/* ── Notification Center Modal ── */}
+      <Modal
+        visible={notifModalOpen}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setNotifModalOpen(false)}
+      >
+        <View style={s.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setNotifModalOpen(false)}>
+            <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFill} />
+          </Pressable>
+
+          <View style={s.modalSheet}>
+            <BlurView intensity={getBlurIntensity(55)} tint="dark" style={StyleSheet.absoluteFill} />
+            <View style={s.modalHeader}>
+              <View style={s.modalHandle} />
+            </View>
+
+            <View style={s.modalTitleRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Ionicons name="notifications" size={24} color="#87C4FF" />
+                <Text style={s.modalTitle}>Notification Center</Text>
+              </View>
+              <Pressable style={s.modalCloseBtn} onPress={() => setNotifModalOpen(false)}>
+                <Ionicons name="close" size={20} color={P.white} />
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={s.modalScroll} showsVerticalScrollIndicator={false}>
+              {/* Notification Status Banner */}
+              <View style={s.statusBanner}>
+                <Ionicons name="sparkles" size={16} color="#4ECDC4" style={{ marginTop: 1 }} />
+                <Text style={s.statusBannerTxt}>
+                  Showing active system alarms & scheduled task alerts synced with Apple/Android OS.
+                </Text>
+              </View>
+
+              <Text style={s.sectionLabel}>Active Reminders ({scheduledNotifs.length})</Text>
+
+              {scheduledNotifs.length === 0 ? (
+                <View style={s.emptyNotifCard}>
+                  <Ionicons name="notifications-off-outline" size={32} color={P.dimmer} />
+                  <Text style={s.emptyNotifTitle}>Quiet Sanctuary</Text>
+                  <Text style={s.emptyNotifSub}>No repeating alarms are scheduled right now. Add tasks with high or medium priority to trigger reminders!</Text>
+                </View>
+              ) : (
+                scheduledNotifs.map((n, idx) => {
+                  const title = n.content?.title || "System Alert";
+                  const body = n.content?.body || "";
+                  const seconds = n.trigger?.seconds;
+                  
+                  return (
+                    <View key={n.identifier || idx} style={s.notifCard}>
+                      <View style={s.notifCardIcon}>
+                        <Ionicons name="alarm-outline" size={18} color="#FF6B6B" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.notifCardTitle}>{title}</Text>
+                        <Text style={s.notifCardBody}>{body}</Text>
+                        {seconds && (
+                          <Text style={s.notifCardMeta}>
+                            Interval: Every {seconds >= 3600 ? `${seconds / 3600} hours` : `${seconds / 60} mins`}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+
+              {/* Action row */}
+              <View style={{ gap: 12, marginTop: 24 }}>
+                <Pressable style={s.testBtn} onPress={handleTestAlert}>
+                  <LinearGradient colors={['rgba(135,196,255,0.22)', 'rgba(43,107,255,0.12)']} style={StyleSheet.absoluteFill} />
+                  <Ionicons name="flash" size={16} color="#87C4FF" />
+                  <Text style={s.testBtnTxt}>Trigger 2s Test Smart Alert ⚡</Text>
+                </Pressable>
+
+                {scheduledNotifs.length > 0 && (
+                  <Pressable style={s.clearBtn} onPress={handleClearNotifications}>
+                    <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFill} />
+                    <Ionicons name="trash-outline" size={16} color="#FF6B6B" />
+                    <Text style={s.clearBtnTxt}>Cancel All Scheduled Reminders</Text>
+                  </Pressable>
+                )}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

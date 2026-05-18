@@ -3,16 +3,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
 import API from '../api/api.js';
 import { useGamificationStore } from './gamificationStore';
+import { useAmbientSoundStore } from './ambientSoundStore';
 import { fireSuccessHaptic, fireHaptic } from '../../utils/haptics';
 
 const AUDIO_MAP = {
-  lofi: require('../../assets/audio/lofi.mp3'),
+  lofi: require('../../assets/audio/piano.mp3'),
   rain: require('../../assets/audio/rain.mp3'),
   forest: require('../../assets/audio/forest.mp3'),
-  'brown-noise': require('../../assets/audio/brown-noise.mp3'),
+  'brown-noise': require('../../assets/audio/rain.mp3'),
   ocean: require('../../assets/audio/ocean.mp3'),
   piano: require('../../assets/audio/piano.mp3'),
-  'deep-space': require('../../assets/audio/deep-space.mp3'),
+  'deep-space': require('../../assets/audio/ocean.mp3'),
 };
 
 export const useFocusStore = create((set, get) => ({
@@ -41,6 +42,7 @@ export const useFocusStore = create((set, get) => ({
   },
   history: [],
   analyticsLogs: [],
+  ambientStats: {}, // maps soundId -> active duration in seconds during current session
 
   // Offline Caching & Sync States
   offlineSessions: [],
@@ -115,42 +117,32 @@ export const useFocusStore = create((set, get) => ({
       isPaused: false,
       timeRemaining: duration,
       sessionId,
-      sessionStartTime: startedAt
+      sessionStartTime: startedAt,
+      ambientStats: {}
     });
-
-    // 2. Load and Play audio loops
-    await get().loadAndPlayAudio();
   },
 
   pauseSession: async () => {
-    const { soundInstance } = get();
     fireHaptic('light');
-    
-    if (soundInstance) {
-      try {
-        await soundInstance.pauseAsync();
-      } catch (e) {}
-    }
-
     set({ isPaused: true, isPlaying: false });
   },
 
   resumeSession: async () => {
-    const { soundInstance } = get();
     fireHaptic('light');
-
-    if (soundInstance) {
-      try {
-        await soundInstance.playAsync();
-      } catch (e) {}
-    }
-
     set({ isPaused: false, isPlaying: true });
   },
 
   tick: () => {
-    const { timeRemaining, isActive, isPaused } = get();
+    const { timeRemaining, isActive, isPaused, ambientStats } = get();
     if (!isActive || isPaused) return;
+
+    // Dynamically increment active ambient sound listening duration in seconds
+    const ambientState = useAmbientSoundStore.getState();
+    if (ambientState?.isPlaying && ambientState?.currentSound) {
+      const currentStats = { ...ambientStats };
+      currentStats[ambientState.currentSound] = (currentStats[ambientState.currentSound] || 0) + 1;
+      set({ ambientStats: currentStats });
+    }
 
     if (timeRemaining <= 1) {
       set({ timeRemaining: 0 });
@@ -161,15 +153,12 @@ export const useFocusStore = create((set, get) => ({
   },
 
   completeSession: async (completed) => {
-    const { sessionId, duration, timeRemaining, musicType, sessionStartTime } = get();
+    const { sessionId, duration, timeRemaining, musicType, sessionStartTime, ambientStats } = get();
     const elapsedSeconds = duration - timeRemaining;
     const endedAt = new Date();
 
     fireHaptic('heavy');
     set({ isActive: false, isPaused: false });
-
-    // 1. Stop audio playback
-    await get().cleanupAudio();
 
     if (completed) {
       // Confetti & Haptic celebration trigger
@@ -189,7 +178,8 @@ export const useFocusStore = create((set, get) => ({
         const response = await API.post('/focus/complete', {
           sessionId,
           completed: true,
-          duration
+          duration,
+          ambientStats
         });
 
         if (response.data.success) {
@@ -216,7 +206,8 @@ export const useFocusStore = create((set, get) => ({
           completed: true,
           startedAt: sessionStartTime,
           endedAt,
-          xpEarned: 20
+          xpEarned: 20,
+          ambientStats
         };
 
         const currentCaches = [...get().offlineSessions, localCacheItem];
@@ -239,7 +230,8 @@ export const useFocusStore = create((set, get) => ({
         await API.post('/focus/complete', {
           sessionId,
           completed: false,
-          duration: elapsedSeconds
+          duration: elapsedSeconds,
+          ambientStats
         });
       } catch (error) {
         console.log('[Focus Store] Log exit focus offline skipped.');

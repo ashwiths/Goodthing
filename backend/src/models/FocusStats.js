@@ -27,6 +27,11 @@ const focusStatsSchema = new mongoose.Schema({
     type: [String], // Array of YYYY-MM-DD focus days completed
     default: [],
   },
+  ambientSoundStats: {
+    type: Map,
+    of: Number, // key is soundId, value is total duration in seconds
+    default: {},
+  },
   lastFocusDate: {
     type: String, // YYYY-MM-DD to avoid timezone conversions
     default: null,

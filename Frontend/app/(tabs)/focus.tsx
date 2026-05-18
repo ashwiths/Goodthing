@@ -11,6 +11,8 @@ import {
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
+import { useSettingsStore } from '../../store/settingsStore';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -30,6 +32,11 @@ import { useAppTheme } from '../../hooks/useAppTheme';
 import { fireHaptic } from '../../utils/haptics';
 import { useFocusStore } from '../../src/store/focusStore';
 import { C } from '../../constants/colors';
+
+// Immersive Ambient sound imports
+import HeadphoneBanner from '../../components/focus/HeadphoneBanner';
+import AmbientCard from '../../components/focus/AmbientCard';
+import { useAmbientSoundStore, SOUNDS } from '../../src/store/ambientSoundStore';
 
 const { width: W } = Dimensions.get('window');
 const MAX_W = 600;
@@ -99,6 +106,7 @@ function WaveformVisualizer({ isPlaying }: { isPlaying: boolean }) {
 export default function FocusScreen() {
   const insets = useSafeAreaInsets();
   const { P, getBlurIntensity } = useAppTheme();
+  const { deepWorkZone } = useSettingsStore();
 
   const {
     duration,
@@ -128,6 +136,47 @@ export default function FocusScreen() {
   } = useFocusStore();
 
   const [soundPackPanelOpen, setSoundPackPanelOpen] = useState(false);
+
+  // ─── AMBIENT FOCUS SOUND SYSTEM STATES & HOOKS ───
+  const {
+    currentSound: currentAmbientSound,
+    isPlaying: isAmbientPlaying,
+    playSound: playAmbientSound,
+    pauseSound: pauseAmbientSound,
+    stopSound: stopAmbientSound,
+    volume: ambientVolume,
+    setVolume: setAmbientVolume,
+    cleanup: cleanupAmbientSound
+  } = useAmbientSoundStore();
+
+  const [autoplayAmbience, setAutoplayAmbience] = useState(true);
+
+  // 1. Cleanup ambient audio on component unmount
+  useEffect(() => {
+    return () => {
+      cleanupAmbientSound();
+    };
+  }, []);
+
+  // 2. Automatically manage ambient sound states based on timer play/pause/stop triggers
+  useEffect(() => {
+    if (!isActive) {
+      if (isAmbientPlaying) {
+        stopAmbientSound();
+      }
+    } else {
+      if (isPaused) {
+        if (isAmbientPlaying) {
+          pauseAmbientSound();
+        }
+      } else {
+        if (!isAmbientPlaying && autoplayAmbience) {
+          const soundToPlay = currentAmbientSound || 'piano';
+          playAmbientSound(soundToPlay);
+        }
+      }
+    }
+  }, [isActive, isPaused]);
 
   // Breathing rings animation values
   const ringScale = useSharedValue(1);
@@ -199,17 +248,52 @@ export default function FocusScreen() {
   const s = React.useMemo(() => StyleSheet.create({
     root: { flex: 1, backgroundColor: P.bg },
     scroll: { paddingHorizontal: 22 },
-    
+
     // Header
     headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 },
     pageTitle: { fontSize: 30, fontWeight: '800', color: P.white, letterSpacing: -0.5 },
-    pageSub:   { fontSize: 13, color: P.dimmer, fontWeight: '500', marginTop: 3 },
+    pageSub: { fontSize: 13, color: P.dimmer, fontWeight: '500', marginTop: 3 },
     syncAlertBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,123,0,0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,123,0,0.25)' },
     syncAlertTxt: { fontSize: 11, color: '#FF7B00', fontWeight: '700' },
+    settingsGearBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
+    deepBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      borderRadius: 14,
+      backgroundColor: 'rgba(135,196,255,0.05)',
+      borderWidth: 1,
+      borderColor: 'rgba(135,196,255,0.15)',
+      marginTop: 12,
+      overflow: 'hidden'
+    },
+    deepBannerTxt: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: P.dim,
+      flex: 1
+    },
 
     // Ambient Breathing Ring Circle
     ringContainer: { height: 260, alignItems: 'center', justifyContent: 'center', marginVertical: 14 },
-    outerRing: { width: 220, height: 220, borderRadius: 110, borderWidth: 2, borderColor: 'rgba(135,196,255,0.2)', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.02)' },
+    outerRing: {
+      width: 220,
+      height: 220,
+      borderRadius: 110,
+      borderWidth: 2,
+      borderColor: 'rgba(135,196,255,0.28)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.02)',
+      overflow: 'hidden',
+      shadowColor: '#87C4FF',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.35,
+      shadowRadius: 20,
+      elevation: 8
+    },
     glowRing: { position: 'absolute', width: 250, height: 250, borderRadius: 125, borderWidth: 1, borderColor: '#87C4FF', shadowColor: '#87C4FF', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 30 },
     timerText: { fontSize: 44, fontWeight: '900', color: P.white, letterSpacing: -1 },
     timerModeTag: { fontSize: 10, fontWeight: '800', color: P.dim, textTransform: 'uppercase', letterSpacing: 1.2, marginTop: 4 },
@@ -248,7 +332,16 @@ export default function FocusScreen() {
     aiTxt: { fontSize: 11.5, color: P.dim, lineHeight: 16 },
 
     // Volume Slider Box
-    volumeBox: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: P.borderSub, backgroundColor: 'rgba(10,18,34,0.4)', marginBottom: 24 }
+    volumeBox: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: P.borderSub, backgroundColor: 'rgba(10,18,34,0.4)', marginBottom: 24 },
+
+    // Focus Ambience Sound System Styles
+    cardSubtitle: { fontSize: 13, color: P.dimmer, fontWeight: '600', marginBottom: 4, marginTop: -8 },
+    helperText: { fontSize: 11.5, color: P.dim, lineHeight: 16, marginBottom: 16 },
+    autoplayRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16, paddingVertical: 4 },
+    checkbox: { width: 18, height: 18, borderRadius: 5, borderWidth: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.02)' },
+    checkboxActive: { backgroundColor: '#87C4FF' },
+    autoplayTxt: { fontSize: 12, fontWeight: '500', flex: 1 },
+    ambientVolumeBox: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: P.borderSub, backgroundColor: 'rgba(255,255,255,0.02)', marginBottom: 12 }
   }), [P]);
 
   return (
@@ -262,11 +355,24 @@ export default function FocusScreen() {
         {/* ── Header ── */}
         <Animated.View entering={FadeInUp.delay(100)}>
           <View style={s.headerRow}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={s.pageTitle}>Deep Focus</Text>
               <Text style={s.pageSub}>Create your deep work sanctuary.</Text>
             </View>
-            
+
+            {/* Settings Gear Button shown ONLY in Only-Focus mode */}
+            {deepWorkZone && (
+              <Pressable
+                style={s.settingsGearBtn}
+                onPress={() => {
+                  fireHaptic('medium');
+                  router.push('/(tabs)/settings' as any);
+                }}
+              >
+                <Ionicons name="settings-outline" size={22} color={P.white} />
+              </Pressable>
+            )}
+
             {/* Sync Alert for Cached Offline Sessions */}
             {offlineSessions.length > 0 && (
               <Pressable
@@ -287,6 +393,17 @@ export default function FocusScreen() {
               </Pressable>
             )}
           </View>
+
+          {/* Guide banner to turn off deep mode */}
+          {deepWorkZone && (
+            <Animated.View entering={FadeInUp.delay(150)} style={s.deepBanner}>
+              <BlurView intensity={getBlurIntensity(20)} tint="dark" style={StyleSheet.absoluteFill} />
+              <Ionicons name="information-circle" size={16} color="#87C4FF" />
+              <Text style={s.deepBannerTxt}>
+                Deep Mode is ON. Tapping the settings gear icon above will allow you to customize or turn it off.
+              </Text>
+            </Animated.View>
+          )}
         </Animated.View>
 
         {/* ── Sound Waveform Visualizer ── */}
@@ -386,38 +503,55 @@ export default function FocusScreen() {
           </Animated.View>
         )}
 
-        {/* ── Ambient Track Selector Cards ── */}
-        <Animated.View entering={FadeInDown.delay(260)} style={s.modeCard}>
-          <BlurView intensity={getBlurIntensity(30)} tint="dark" style={StyleSheet.absoluteFill} />
-          <Text style={s.cardTitle}>Select Ambient Soundscapes</Text>
-          <View style={s.musicGrid}>
-            {[
-              { id: 'lofi',        label: 'Lofi Ambient',  icon: 'musical-notes' },
-              { id: 'rain',        label: 'Deep Rain',     icon: 'rainy'         },
-              { id: 'forest',      label: 'Forest Birds',  icon: 'leaf'          },
-              { id: 'brown-noise', label: 'Brown Noise',   icon: 'radio'         },
-              { id: 'ocean',       label: 'Ocean Waves',   icon: 'water'         },
-              { id: 'piano',       label: 'Soft Piano',    icon: 'apps'          },
-              { id: 'deep-space',  label: 'Deep Space',    icon: 'planet'        }
-            ].map((pack) => {
-              const active = musicType === pack.id;
-              return (
-                <Pressable
-                  key={pack.id}
-                  style={[s.musicCard, active && s.musicCardActive]}
-                  onPress={() => setMusic(pack.id)}
-                >
-                  <View style={s.musicIconBox}>
-                    <Ionicons name={pack.icon as any} size={15} color={active ? '#87C4FF' : 'rgba(255,255,255,0.4)'} />
-                  </View>
-                  <Text style={[s.musicName, active && s.musicNameActive]} numberOfLines={1}>
-                    {pack.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </Animated.View>
+        {/* ── Immersive Ambient Focus Sound System ── */}
+        {isActive && (
+          <Animated.View entering={FadeInDown.delay(100)} style={s.modeCard}>
+            <BlurView intensity={getBlurIntensity(30)} tint="dark" style={StyleSheet.absoluteFill} />
+
+            <Text style={s.cardTitle}>Focus Ambience</Text>
+
+            {/* Premium Animated Headphone Recommendation Banner */}
+            <HeadphoneBanner />
+
+            {/* Autoplay Checkbox Toggle */}
+            <Pressable
+              style={s.autoplayRow}
+              onPress={() => {
+                fireHaptic('light');
+                setAutoplayAmbience(!autoplayAmbience);
+              }}
+            >
+              <View style={[
+                s.checkbox,
+                autoplayAmbience && s.checkboxActive,
+                { borderColor: autoplayAmbience ? '#87C4FF' : 'rgba(255,255,255,0.1)' }
+              ]}>
+                {autoplayAmbience && (
+                  <Ionicons name="checkmark" size={12} color="#000000" />
+                )}
+              </View>
+              <Text style={[s.autoplayTxt, { color: P.white }]}>
+                Autoplay selected ambient track when focus session starts
+              </Text>
+            </Pressable>
+
+            {/* Immersive Soundscapes List */}
+            <View style={{ gap: 8, marginTop: 12 }}>
+              {SOUNDS.map((sound) => {
+                const isActiveSound = currentAmbientSound === sound.id;
+                return (
+                  <AmbientCard
+                    key={sound.id}
+                    sound={sound}
+                    isActive={isActiveSound}
+                    isPlaying={isActiveSound && isAmbientPlaying}
+                    onPress={() => playAmbientSound(sound.id)}
+                  />
+                );
+              })}
+            </View>
+          </Animated.View>
+        )}
 
         {/* ── Segmented Volume Presets Selector ── */}
         {isActive && (

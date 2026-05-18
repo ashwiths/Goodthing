@@ -11,13 +11,15 @@ const API = axios.create({
   },
 });
 
-// Request Interceptor to dynamically attach the token
+// Request Interceptor to dynamically attach the token and timezone offset
 API.interceptors.request.use(
   async (config) => {
     const token = await AsyncStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // Automatically attach timezone offset to make backend streak dates robust
+    config.headers['x-timezone-offset'] = String(new Date().getTimezoneOffset());
     return config;
   },
   (error) => {

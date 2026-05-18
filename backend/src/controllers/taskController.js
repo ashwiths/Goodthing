@@ -1,5 +1,5 @@
 import Task from '../models/Task.js';
-import { updateStreakAndScore, checkAndUnlockAchievements } from '../services/gamificationEngine.js';
+import { updateStreakAndScore, checkAndUnlockAchievements, recalculateUserStats } from '../services/gamificationEngine.js';
 
 // @desc    Create a new task
 // @route   POST /api/tasks
@@ -21,6 +21,9 @@ export const createTask = async (req, res) => {
       reminderTime,
       user: req.user._id,
     });
+
+    const offset = parseInt(req.headers['x-timezone-offset'] || '0', 10);
+    await recalculateUserStats(req.user._id, offset);
 
     res.status(201).json(task);
   } catch (error) {
@@ -66,7 +69,6 @@ export const updateTask = async (req, res) => {
       'description',
       'priority',
       'category',
-      'completed',
       'dueDate',
       'reminderTime',
     ];
@@ -77,14 +79,22 @@ export const updateTask = async (req, res) => {
       }
     });
 
+    // Handle completed toggle safely with completedAt timestamps
+    if (req.body.completed !== undefined) {
+      if (!wasCompleted && req.body.completed) {
+        task.completed = true;
+        task.completedAt = new Date();
+      } else if (wasCompleted && !req.body.completed) {
+        task.completed = false;
+        task.completedAt = null;
+      }
+    }
+
     const updatedTask = await task.save();
 
-    // Trigger gamification updates if completed changed from false to true
-    let newlyUnlocked = [];
-    if (!wasCompleted && updatedTask.completed) {
-      await updateStreakAndScore(req.user._id, updatedTask);
-      newlyUnlocked = await checkAndUnlockAchievements(req.user._id, updatedTask);
-    }
+    // Trigger centralized gamification updates timezone-safely
+    const offset = parseInt(req.headers['x-timezone-offset'] || '0', 10);
+    const { newlyUnlocked } = await recalculateUserStats(req.user._id, offset);
 
     // Return task object enriched with newly unlocked achievements
     const taskObj = updatedTask.toObject();
@@ -115,6 +125,9 @@ export const deleteTask = async (req, res) => {
 
     // 3. Delete task
     await task.deleteOne();
+
+    const offset = parseInt(req.headers['x-timezone-offset'] || '0', 10);
+    await recalculateUserStats(req.user._id, offset);
 
     res.status(200).json({ message: 'Task removed successfully ✅' });
   } catch (error) {

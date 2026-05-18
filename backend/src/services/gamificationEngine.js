@@ -1,6 +1,7 @@
 import UserStats from '../models/UserStats.js';
 import ProductivityHistory from '../models/ProductivityHistory.js';
 import Task from '../models/Task.js';
+import FocusSession from '../models/FocusSession.js';
 
 // Define the core list of achievements & badges
 export const ACHIEVEMENT_DEFINITIONS = [
@@ -118,132 +119,139 @@ export const ACHIEVEMENT_DEFINITIONS = [
   }
 ];
 
-// Helper to get formatted date string in YYYY-MM-DD
-function getTodayDateStr() {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-// Helper to get yesterday date string in YYYY-MM-DD
-function getYesterdayDateStr() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
+// Helper to convert UTC date to local date string YYYY-MM-DD using timezone offset in minutes
+export function getLocalDateStr(date, offsetMinutes) {
+  if (!date) return '';
+  const localMs = date.getTime() - (offsetMinutes * 60 * 1000);
+  const localDate = new Date(localMs);
+  const yyyy = localDate.getUTCFullYear();
+  const mm = String(localDate.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(localDate.getUTCDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 }
 
 /**
- * Update user streak and productivity score.
- * Triggers when a task is marked completed.
+ * Recalculate all user statistics timezone-safely from source MongoDB records.
+ * Keeps user stats perfectly immune to exploits, deletions, or edits!
  */
-export async function updateStreakAndScore(userId, task) {
+export async function recalculateUserStats(userId, offsetMinutes = 0) {
   try {
-    let stats = await UserStats.findOne({ user: userId });
-    if (!stats) {
-      stats = await UserStats.create({ user: userId });
-    }
-
-    const todayStr = getTodayDateStr();
-    const yesterdayStr = getYesterdayDateStr();
-
-    // 1. Calculate Streak
-    if (!stats.lastCompletedDate) {
-      // First task ever
-      stats.currentStreak = 1;
-      stats.longestStreak = 1;
-      stats.lastCompletedDate = todayStr;
-      stats.streakHistory = [todayStr];
-    } else if (stats.lastCompletedDate === todayStr) {
-      // Already completed a task today. Streak remains, just record date
-      if (!stats.streakHistory.includes(todayStr)) {
-        stats.streakHistory.push(todayStr);
-      }
-    } else if (stats.lastCompletedDate === yesterdayStr) {
-      // Completed yesterday. Streak increments!
-      stats.currentStreak += 1;
-      if (stats.currentStreak > stats.longestStreak) {
-        stats.longestStreak = stats.currentStreak;
-      }
-      stats.lastCompletedDate = todayStr;
-      if (!stats.streakHistory.includes(todayStr)) {
-        stats.streakHistory.push(todayStr);
-      }
-    } else {
-      // Streak broken. Check streak freeze protection
-      if (stats.streakFreezeActive) {
-        stats.streakFreezeActive = false; // consume freeze shield
-        stats.currentStreak = 1; // reset to 1 instead of losing it entirely
-        console.log(`[Gamification] Streak freeze shield consumed for user ${userId}`);
-      } else {
-        stats.currentStreak = 1;
-      }
-      stats.lastCompletedDate = todayStr;
-      if (!stats.streakHistory.includes(todayStr)) {
-        stats.streakHistory.push(todayStr);
-      }
-    }
-
-    // 2. Increment lifetime completions
-    stats.totalCompletedTasks += 1;
-    if (task && task.priority && task.priority.toLowerCase() === 'high') {
-      stats.totalHighPriorityCompleted += 1;
-    }
-
-    // 3. Compute Productivity Score Increase
-    let scoreGain = 20; // base completion
-
-    if (task && task.priority && task.priority.toLowerCase() === 'high') {
-      scoreGain += 10; // high priority bonus
-    }
-
-    // Streak Milestones bonuses
-    if (stats.currentStreak > 0 && stats.currentStreak % 7 === 0 && stats.lastCompletedDate !== stats.streakHistory[stats.streakHistory.length - 2]) {
-      scoreGain += 50; // 7-day streak milestone reward
-    }
-
-    stats.productivityScore = Math.min(stats.productivityScore + scoreGain, 1000);
-
-    await stats.save();
-
-    // 4. Record Daily Productivity History log
-    await ProductivityHistory.findOneAndUpdate(
-      { user: userId, date: todayStr },
-      {
-        $setOnInsert: { user: userId, date: todayStr },
-        $set: { score: stats.productivityScore },
-        $inc: { tasksCompletedToday: 1 }
-      },
-      { upsert: true, new: true }
+    // 1. Fetch user stats document or initialize it atomically to prevent E11000 duplicate key race conditions
+    const stats = await UserStats.findOneAndUpdate(
+      { user: userId },
+      { $setOnInsert: { user: userId } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
-    return stats;
-  } catch (error) {
-    console.error('[Gamification] ❌ Failed to update streak and score:', error);
-    throw error;
-  }
-}
+    // 2. Fetch all completed tasks
+    const completedTasks = await Task.find({ user: userId, completed: true }).sort({ completedAt: 1 });
+    const overdueTasksCount = await Task.countDocuments({
+      user: userId,
+      completed: false,
+      dueDate: { $lt: new Date() }
+    });
 
-/**
- * Check and unlock any eligible achievements for the user.
- * Returns array of newly unlocked achievements.
- */
-export async function checkAndUnlockAchievements(userId, task) {
-  try {
-    const stats = await UserStats.findOne({ user: userId });
-    if (!stats) return [];
+    const totalCompletedTasks = completedTasks.length;
+    const totalHighPriorityCompleted = completedTasks.filter(
+      (t) => t.priority && t.priority.toLowerCase() === 'high'
+    ).length;
 
-    const now = new Date();
-    const hours = now.getHours();
+    // 3. Fetch all focus sessions (completed/ended)
+    const focusSessions = await FocusSession.find({
+      $or: [{ userId: userId }, { user: userId }],
+      completed: true
+    }).sort({ endTime: 1 });
 
+    const totalFocusSessions = focusSessions.length;
+    const totalFocusMinutes = focusSessions.reduce((acc, curr) => acc + (curr.durationMinutes || 0), 0);
+    const longestFocusSession = focusSessions.reduce((max, curr) => Math.max(max, curr.durationMinutes || 0), 0);
+
+    // Compile ambience breakdown
+    const ambienceBreakdown = new Map();
+    focusSessions.forEach((session) => {
+      const type = session.ambienceType || 'piano';
+      const prev = ambienceBreakdown.get(type) || 0;
+      ambienceBreakdown.set(type, prev + (session.durationMinutes || 0));
+    });
+
+    // 4. Timezone-Safe Streak Tracing
+    const localCompletionDates = completedTasks.map((t) =>
+      getLocalDateStr(t.completedAt || t.updatedAt || new Date(), offsetMinutes)
+    );
+    const uniqueDates = [...new Set(localCompletionDates)].sort();
+
+    const todayStr = getLocalDateStr(new Date(), offsetMinutes);
+    const yesterdayStr = getLocalDateStr(new Date(Date.now() - 24 * 60 * 60 * 1000), offsetMinutes);
+
+    let currentStreak = 0;
+    let checkDate = new Date();
+    let checkStr = getLocalDateStr(checkDate, offsetMinutes);
+
+    if (!uniqueDates.includes(checkStr)) {
+      // Missed today, let's check yesterday
+      checkDate.setDate(checkDate.getDate() - 1);
+      checkStr = getLocalDateStr(checkDate, offsetMinutes);
+
+      if (!uniqueDates.includes(checkStr)) {
+        // Missed today AND yesterday. Check if streak freeze shield can protect us
+        if (stats.streakFreezeActive) {
+          stats.streakFreezeActive = false; // consume the shield!
+          console.log(`[Gamification] Streak freeze shield consumed on recalculation for user ${userId}`);
+          
+          // Tracing continues starting from the most recent task completed date
+          if (uniqueDates.length > 0) {
+            const lastDateParts = uniqueDates[uniqueDates.length - 1].split('-');
+            checkDate = new Date(
+              parseInt(lastDateParts[0], 10),
+              parseInt(lastDateParts[1], 10) - 1,
+              parseInt(lastDateParts[2], 10)
+            );
+            checkStr = uniqueDates[uniqueDates.length - 1];
+            currentStreak = 1;
+          }
+        }
+      } else {
+        currentStreak = 1;
+      }
+    } else {
+      currentStreak = 1;
+    }
+
+    if (currentStreak > 0) {
+      // Count backwards continuously for consecutive completed days
+      while (true) {
+        checkDate.setDate(checkDate.getDate() - 1);
+        checkStr = getLocalDateStr(checkDate, offsetMinutes);
+        if (uniqueDates.includes(checkStr)) {
+          currentStreak++;
+        } else {
+          break;
+        }
+      }
+    }
+
+    const longestStreak = Math.max(stats.longestStreak || 0, currentStreak);
+
+    // 5. XP Score Calculation Formula
+    // Base Completed: +20 XP
+    // High Priority Completed: +15 XP (+35 total)
+    // Focus Session completed: +10 XP
+    // 7-Day Streak Milestones: +50 XP (for every 7 consecutive days)
+    // Overdue penalty: -10 XP
+    const baseCompletionXp = totalCompletedTasks * 20;
+    const priorityBonusXp = totalHighPriorityCompleted * 15;
+    const focusXp = totalFocusSessions * 10;
+    const streakMilestoneXp = Math.floor(currentStreak / 7) * 50;
+    const overduePenaltyXp = overdueTasksCount * 10;
+
+    const calculatedScore = baseCompletionXp + priorityBonusXp + focusXp + streakMilestoneXp - overduePenaltyXp;
+    const productivityScore = Math.max(0, Math.min(1000, calculatedScore));
+
+    // 6. Achievement & Badges Engine
     const newlyUnlocked = [];
+    const now = new Date();
 
     for (const definition of ACHIEVEMENT_DEFINITIONS) {
-      // Skip if already unlocked
       const isAlreadyUnlocked = stats.unlockedAchievements.some(
         (ach) => ach.achievementId === definition.id
       );
@@ -253,51 +261,91 @@ export async function checkAndUnlockAchievements(userId, task) {
 
       switch (definition.id) {
         case 'FIRST_TASK':
-          if (stats.totalCompletedTasks >= 1) {
-            isEligible = true;
-          }
+          if (totalCompletedTasks >= 1) isEligible = true;
           break;
         case 'STREAK_7':
-          if (stats.currentStreak >= 7) {
-            isEligible = true;
-          }
+          if (currentStreak >= 7) isEligible = true;
           break;
         case 'STREAK_30':
-          if (stats.currentStreak >= 30) {
-            isEligible = true;
-          }
+          if (currentStreak >= 30) isEligible = true;
           break;
         case 'HIGH_PRIORITY_MASTER':
-          if (stats.totalHighPriorityCompleted >= 50) {
-            isEligible = true;
-          }
+          if (totalHighPriorityCompleted >= 50) isEligible = true;
           break;
         case 'TASK_100':
-          if (stats.totalCompletedTasks >= 100) {
-            isEligible = true;
-          }
+          if (totalCompletedTasks >= 100) isEligible = true;
           break;
         case 'PRODUCTIVITY_BEAST':
-          if (stats.productivityScore >= 800) {
-            isEligible = true;
-          }
+          if (productivityScore >= 800) isEligible = true;
           break;
         case 'NIGHT_OWL':
-          // Completed task between 12 AM (0) and 4 AM (4)
-          if (hours >= 0 && hours < 4) {
-            isEligible = true;
-          }
+          // Task completed between 12 AM and 4 AM local time
+          isEligible = completedTasks.some((t) => {
+            const completedTime = t.completedAt || t.updatedAt || new Date();
+            const localTime = new Date(completedTime.getTime() - (offsetMinutes * 60 * 1000));
+            const hour = localTime.getUTCHours();
+            return hour >= 0 && hour < 4;
+          });
           break;
         case 'EARLY_BIRD':
-          // Completed task between 4 AM (4) and 7 AM (7)
-          if (hours >= 4 && hours < 7) {
-            isEligible = true;
+          // Task completed between 4 AM and 7 AM local time
+          isEligible = completedTasks.some((t) => {
+            const completedTime = t.completedAt || t.updatedAt || new Date();
+            const localTime = new Date(completedTime.getTime() - (offsetMinutes * 60 * 1000));
+            const hour = localTime.getUTCHours();
+            return hour >= 4 && hour < 7;
+          });
+          break;
+        case 'FIRST_FOCUS':
+          if (totalFocusSessions >= 1) isEligible = true;
+          break;
+        case 'FOCUS_10':
+          if (totalFocusSessions >= 10) isEligible = true;
+          break;
+        case 'FOCUS_100':
+          if (totalFocusSessions >= 100) isEligible = true;
+          break;
+        case 'DEEP_WORK_MASTER':
+          // Focus session durationMinutes >= 90 mins
+          if (longestFocusSession >= 90) isEligible = true;
+          break;
+        case 'NIGHT_FOCUS':
+          // Focus session completed between 12 AM and 4 AM local time
+          isEligible = focusSessions.some((s) => {
+            const endTime = s.endTime || s.updatedAt || new Date();
+            const localTime = new Date(endTime.getTime() - (offsetMinutes * 60 * 1000));
+            const hour = localTime.getUTCHours();
+            return hour >= 0 && hour < 4;
+          });
+          break;
+        case 'CONSISTENT_MIND':
+          // Focus session completed on 7 consecutive days
+          if (focusSessions.length >= 7) {
+            const localFocusDates = focusSessions.map((s) =>
+              getLocalDateStr(s.endTime || s.updatedAt || new Date(), offsetMinutes)
+            );
+            const uniqueFocusDates = [...new Set(localFocusDates)].sort();
+            
+            let consecutiveFocusDays = 1;
+            let maxConsecutive = 1;
+            for (let i = 1; i < uniqueFocusDates.length; i++) {
+              const d1 = new Date(uniqueFocusDates[i - 1]);
+              const d2 = new Date(uniqueFocusDates[i]);
+              const diffTime = Math.abs(d2 - d1);
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              if (diffDays === 1) {
+                consecutiveFocusDays++;
+                maxConsecutive = Math.max(maxConsecutive, consecutiveFocusDays);
+              } else if (diffDays > 1) {
+                consecutiveFocusDays = 1;
+              }
+            }
+            if (maxConsecutive >= 7) isEligible = true;
           }
           break;
       }
 
       if (isEligible) {
-        // Unlock it!
         stats.unlockedAchievements.push({
           achievementId: definition.id,
           unlockedAt: now,
@@ -309,28 +357,52 @@ export async function checkAndUnlockAchievements(userId, task) {
           unlockedAt: now,
         });
 
-        // Award score bonus
-        stats.productivityScore = Math.min(stats.productivityScore + definition.xp, 1000);
-
         newlyUnlocked.push(definition);
       }
     }
 
-    if (newlyUnlocked.length > 0) {
-      await stats.save();
+    // 7. Save updated statistics to UserStats
+    stats.currentStreak = currentStreak;
+    stats.longestStreak = longestStreak;
+    stats.lastCompletedDate = uniqueDates.length > 0 ? uniqueDates[uniqueDates.length - 1] : null;
+    stats.streakHistory = uniqueDates;
+    stats.totalCompletedTasks = totalCompletedTasks;
+    stats.totalHighPriorityCompleted = totalHighPriorityCompleted;
+    stats.totalFocusMinutes = totalFocusMinutes;
+    stats.longestFocusSession = longestFocusSession;
+    stats.totalFocusSessions = totalFocusSessions;
+    stats.ambienceBreakdown = ambienceBreakdown;
+    stats.productivityScore = productivityScore;
 
-      // Log score update in history
-      const todayStr = getTodayDateStr();
-      await ProductivityHistory.findOneAndUpdate(
-        { user: userId, date: todayStr },
-        { score: stats.productivityScore },
-        { upsert: true }
-      );
-    }
+    await stats.save();
 
-    return newlyUnlocked;
+    // 8. Log daily productivity curve snapshot in ProductivityHistory
+    await ProductivityHistory.findOneAndUpdate(
+      { user: userId, date: todayStr },
+      {
+        $setOnInsert: { user: userId, date: todayStr },
+        $set: { score: productivityScore },
+        $inc: { tasksCompletedToday: uniqueDates.includes(todayStr) ? 1 : 0 }
+      },
+      { upsert: true, new: true }
+    );
+
+    return { stats, newlyUnlocked };
   } catch (error) {
-    console.error('[Gamification] ❌ Failed to evaluate achievements:', error);
-    return [];
+    console.error('[GamificationEngine] ❌ Centralized recalculation error:', error);
+    throw error;
   }
+}
+
+/**
+ * Backward-Compatible Wrappers for existing route controllers
+ */
+export async function updateStreakAndScore(userId, task, offsetMinutes = 0) {
+  const result = await recalculateUserStats(userId, offsetMinutes);
+  return result.stats;
+}
+
+export async function checkAndUnlockAchievements(userId, task, offsetMinutes = 0) {
+  const result = await recalculateUserStats(userId, offsetMinutes);
+  return result.newlyUnlocked;
 }

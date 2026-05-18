@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { secureStorage } from '../utils/secureStorage.js';
 import API from '../api/api.js';
 
 export const useAuthStore = create((set, get) => ({
@@ -14,13 +14,20 @@ export const useAuthStore = create((set, get) => ({
       const response = await API.post('/auth/signup', { name, email, password });
       const { token, user, message } = response.data;
 
-      // Save token and user to AsyncStorage
-      await AsyncStorage.setItem('token', token);
-      await AsyncStorage.setItem('user', JSON.stringify(user));
+      // Map to standardized user object
+      const mappedUser = {
+        uid: user._id,
+        fullName: user.name,
+        email: user.email,
+        avatar: user.avatar || '',
+        provider: 'email',
+      };
 
-      // Axios interceptor will dynamically attach this token to future requests
+      // Save token and user to secure keychain
+      await secureStorage.setItem('token', token);
+      await secureStorage.setItem('user', JSON.stringify(mappedUser));
 
-      set({ token, user, loading: false });
+      set({ token, user: mappedUser, loading: false });
       return { success: true, message };
     } catch (error) {
       set({ loading: false });
@@ -36,13 +43,20 @@ export const useAuthStore = create((set, get) => ({
       const response = await API.post('/auth/login', { email, password });
       const { token, user, message } = response.data;
 
-      // Save token and user to AsyncStorage
-      await AsyncStorage.setItem('token', token);
-      await AsyncStorage.setItem('user', JSON.stringify(user));
+      // Map to standardized user object
+      const mappedUser = {
+        uid: user._id,
+        fullName: user.name,
+        email: user.email,
+        avatar: user.avatar || '',
+        provider: 'email',
+      };
 
-      // Axios interceptor will dynamically attach this token to future requests
+      // Save token and user to secure keychain
+      await secureStorage.setItem('token', token);
+      await secureStorage.setItem('user', JSON.stringify(mappedUser));
 
-      set({ token, user, loading: false });
+      set({ token, user: mappedUser, loading: false });
       return { success: true, message };
     } catch (error) {
       set({ loading: false });
@@ -51,19 +65,26 @@ export const useAuthStore = create((set, get) => ({
     }
   },
 
-  // Load User Session (Auto Login)
+  // Load User Session (Auto Login / Hydration)
   loadUser: async () => {
     set({ loading: true });
     try {
-      const token = await AsyncStorage.getItem('token');
-      const userJSON = await AsyncStorage.getItem('user');
+      const token = await secureStorage.getItem('token');
+      const userJSON = await secureStorage.getItem('user');
 
       if (token && userJSON) {
         const user = JSON.parse(userJSON);
         
-        // Axios interceptor handles token attachment automatically
+        // Ensure all standardized properties exist
+        const mappedUser = {
+          uid: user.uid || user._id || '',
+          fullName: user.fullName || user.name || 'Productivity Warrior',
+          email: user.email || '',
+          avatar: user.avatar || user.photoURL || '',
+          provider: user.provider || 'email',
+        };
         
-        set({ token, user, loading: false });
+        set({ token, user: mappedUser, loading: false });
         return { success: true };
       } else {
         set({ loading: false });
@@ -79,10 +100,8 @@ export const useAuthStore = create((set, get) => ({
   logout: async () => {
     set({ loading: true });
     try {
-      await AsyncStorage.removeItem('token');
-      await AsyncStorage.removeItem('user');
-
-      // Interceptor will automatically see token is gone
+      await secureStorage.removeItem('token');
+      await secureStorage.removeItem('user');
 
       set({ token: null, user: null, loading: false });
       return { success: true };

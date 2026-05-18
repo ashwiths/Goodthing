@@ -1,7 +1,8 @@
 /**
  * app/(tabs)/analytics.tsx  ·  To|Do — Premium Stats, Streaks & Achievements Hub
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -24,6 +25,7 @@ import { CinematicBackground } from '../../components/CinematicBackground';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { fireHaptic } from '../../utils/haptics';
 import { useGamificationStore } from '../../src/store/gamificationStore';
+import { useFocusStore } from '../../src/store/focusStore';
 import { C } from '../../constants/colors';
 
 const { width: W } = Dimensions.get('window');
@@ -157,10 +159,18 @@ export default function AnalyticsScreen() {
     loading
   } = useGamificationStore();
 
-  // Load metrics initially
-  useEffect(() => {
-    fetchGamificationStats();
-  }, []);
+  const {
+    stats: focusStats,
+    fetchFocusStats
+  } = useFocusStore();
+
+  // Load metrics dynamically whenever this tab gains active focus!
+  useFocusEffect(
+    useCallback(() => {
+      fetchGamificationStats();
+      fetchFocusStats();
+    }, [])
+  );
 
   const handleTabChange = (tab: TabType) => {
     fireHaptic('light');
@@ -275,6 +285,7 @@ export default function AnalyticsScreen() {
               onPress={() => {
                 fireHaptic('light');
                 fetchGamificationStats();
+                fetchFocusStats();
               }}
             >
               <BlurView intensity={getBlurIntensity(30)} tint="dark" style={StyleSheet.absoluteFill} />
@@ -344,6 +355,97 @@ export default function AnalyticsScreen() {
                   </View>
                   <Text style={s.statVal}>{scoreDetails?.totalHighPriorityCompleted || 0}</Text>
                   <Text style={s.statLbl}>High Priority</Text>
+                </View>
+              </View>
+
+              {/* Deep Focus Summary Card */}
+              <View style={s.card}>
+                <BlurView intensity={getBlurIntensity(30)} tint="dark" style={StyleSheet.absoluteFill} />
+                <View style={s.cardTitleRow}>
+                  <Text style={s.cardTitle}>Deep Focus Sanctum</Text>
+                  <Ionicons name="timer-outline" size={16} color="#87C4FF" />
+                </View>
+                
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginVertical: 8 }}>
+                  <View style={{ alignItems: 'center', flex: 1 }}>
+                    <Text style={{ fontSize: 24, fontWeight: '800', color: '#87C4FF' }}>
+                      {(() => {
+                        const totalMins = focusStats?.totalFocusMinutes || 0;
+                        const hrs = Math.floor(totalMins / 60);
+                        const mins = totalMins > 0 ? Math.max(1, Math.round(totalMins % 60)) : 0;
+                        return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+                      })()}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: P.dimmer, marginTop: 4, fontWeight: '600' }}>Focus Duration</Text>
+                  </View>
+                  <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.08)', height: '80%', alignSelf: 'center' }} />
+                  <View style={{ alignItems: 'center', flex: 1 }}>
+                    <Text style={{ fontSize: 24, fontWeight: '800', color: P.white }}>
+                      {focusStats?.longestFocusSession > 0 ? Math.max(1, Math.round(focusStats.longestFocusSession)) : 0}m
+                    </Text>
+                    <Text style={{ fontSize: 11, color: P.dimmer, marginTop: 4, fontWeight: '600' }}>Longest Session</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Focus Ambience Listening Stats Card */}
+              <View style={s.card}>
+                <BlurView intensity={getBlurIntensity(30)} tint="dark" style={StyleSheet.absoluteFill} />
+                <View style={s.cardTitleRow}>
+                  <Text style={s.cardTitle}>Ambience Listening Breakdown</Text>
+                  <Ionicons name="headset-outline" size={16} color="#8A2BE2" />
+                </View>
+
+                <Text style={{ fontSize: 12, color: P.dimmer, lineHeight: 18, marginBottom: 16 }}>
+                  Detailed tracking of the background frequencies you used to focus.
+                </Text>
+
+                <View style={{ gap: 14 }}>
+                  {[
+                    { id: 'piano', title: 'Piano Sanctuary', icon: 'musical-notes-outline', color: '#FFD700' },
+                    { id: 'ocean', title: 'Ocean Waves', icon: 'water-outline', color: '#00D2FF' },
+                    { id: 'forest', title: 'Forest Whispers', icon: 'leaf-outline', color: '#4CAF50' },
+                    { id: 'rain', title: 'Cozy Rain', icon: 'rainy-outline', color: '#87C4FF' },
+                    { id: 'thunder', title: 'Deep Thunder', icon: 'thunderstorm-outline', color: '#FF7B00' }
+                  ].map((track) => {
+                    const totalMinsForTrack = focusStats?.ambienceBreakdown?.[track.id] || 0;
+                    const mins = totalMinsForTrack > 0 ? Math.max(1, Math.round(totalMinsForTrack)) : 0;
+
+                    // Find max minutes to show relative progress bars beautifully!
+                    const allMinutesList = [
+                      focusStats?.ambienceBreakdown?.piano || 0,
+                      focusStats?.ambienceBreakdown?.ocean || 0,
+                      focusStats?.ambienceBreakdown?.forest || 0,
+                      focusStats?.ambienceBreakdown?.rain || 0,
+                      focusStats?.ambienceBreakdown?.thunder || 0
+                    ];
+                    const maxMinutes = Math.max(...allMinutesList, 1); // default to at least 1 min to prevent division by 0
+                    const progressPercent = Math.max(3, (totalMinsForTrack / maxMinutes) * 100);
+
+                    return (
+                      <View key={track.id} style={{ gap: 6 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Ionicons name={track.icon as any} size={15} color={track.color} />
+                            <Text style={{ fontSize: 13, color: P.white, fontWeight: '700' }}>{track.title}</Text>
+                          </View>
+                          <Text style={{ fontSize: 12, color: track.color, fontWeight: '800' }}>
+                            {mins} min
+                          </Text>
+                        </View>
+                        
+                        {/* Immersive Glassmorphic progress bar */}
+                        <View style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 3, overflow: 'hidden', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.05)' }}>
+                          <LinearGradient
+                            colors={[track.color, `${track.color}50`]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={{ height: '100%', width: `${progressPercent}%`, borderRadius: 3 }}
+                          />
+                        </View>
+                      </View>
+                    );
+                  })}
                 </View>
               </View>
 

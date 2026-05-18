@@ -35,6 +35,10 @@ interface SettingsState {
   // Focus Environment
   deepWorkZone: boolean;
   setDeepWorkZone: (val: boolean) => void;
+
+  // Premium Features
+  showUserManual: boolean;
+  setShowUserManual: (val: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -63,6 +67,9 @@ export const useSettingsStore = create<SettingsState>()(
 
       deepWorkZone: false,
       setDeepWorkZone: (deepWorkZone) => set({ deepWorkZone }),
+
+      showUserManual: false, // Default is turned off!
+      setShowUserManual: (showUserManual) => set({ showUserManual }),
     }),
     {
       name: 'todo-premium-settings',

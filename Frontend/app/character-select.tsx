@@ -44,6 +44,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { C } from '../constants/colors';
 import { CinematicBackground } from '../components/CinematicBackground';
+import { useSettingsStore } from '../store/settingsStore';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -336,6 +337,7 @@ function OnboardSlide({
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function CharacterSelectScreen() {
+  const { showUserManual } = useSettingsStore();
   const [phase, setPhase] = useState<'select' | 'onboard'>('select');
   const [genderFilter, setGenderFilter] = useState<GenderFilter>('male');
   const [activeIdx, setActiveIdx] = useState(0);
@@ -370,12 +372,16 @@ export default function CharacterSelectScreen() {
   }, []);
 
   const goToOnboard = useCallback((char: Character) => {
+    if (!showUserManual) {
+      router.replace('/(tabs)' as any);
+      return;
+    }
     phaseOp.value = withTiming(0, { duration: 280 }, (finished) => {
       if (finished) {
         runOnJS(transitionToOnboard)(char);
       }
     });
-  }, [transitionToOnboard]);
+  }, [transitionToOnboard, showUserManual]);
 
   const handleObNext = useCallback(() => {
     if (obPage < ONBOARDING.length - 1) {

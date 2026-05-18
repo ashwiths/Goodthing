@@ -30,10 +30,11 @@ function getProductivityRank(score) {
  */
 export const getStreak = async (req, res) => {
   try {
-    let stats = await UserStats.findOne({ user: req.user._id });
-    if (!stats) {
-      stats = await UserStats.create({ user: req.user._id });
-    }
+    const stats = await UserStats.findOneAndUpdate(
+      { user: req.user._id },
+      { $setOnInsert: { user: req.user._id } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
 
     const todayStr = getTodayDateStr();
     const yesterdayStr = getYesterdayDateStr();
@@ -76,10 +77,11 @@ export const getStreak = async (req, res) => {
  */
 export const updateStreak = async (req, res) => {
   try {
-    let stats = await UserStats.findOne({ user: req.user._id });
-    if (!stats) {
-      stats = await UserStats.create({ user: req.user._id });
-    }
+    const stats = await UserStats.findOneAndUpdate(
+      { user: req.user._id },
+      { $setOnInsert: { user: req.user._id } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
 
     const { buyFreeze } = req.body;
 
@@ -109,10 +111,11 @@ export const updateStreak = async (req, res) => {
  */
 export const getAchievements = async (req, res) => {
   try {
-    let stats = await UserStats.findOne({ user: req.user._id });
-    if (!stats) {
-      stats = await UserStats.create({ user: req.user._id });
-    }
+    const stats = await UserStats.findOneAndUpdate(
+      { user: req.user._id },
+      { $setOnInsert: { user: req.user._id } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
 
     // Map global definitions with user's lock/unlock status
     const mappedAchievements = ACHIEVEMENT_DEFINITIONS.map((def) => {
@@ -139,10 +142,11 @@ export const getAchievements = async (req, res) => {
  */
 export const getProductivityScore = async (req, res) => {
   try {
-    let stats = await UserStats.findOne({ user: req.user._id });
-    if (!stats) {
-      stats = await UserStats.create({ user: req.user._id });
-    }
+    const stats = await UserStats.findOneAndUpdate(
+      { user: req.user._id },
+      { $setOnInsert: { user: req.user._id } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
 
     // 0-1000 score maps directly to Level 1-10 (e.g. 850 score = level 8 + 50% progress to level 9)
     const score = stats.productivityScore;
@@ -176,10 +180,11 @@ export const getProductivityScore = async (req, res) => {
  */
 export const getBadges = async (req, res) => {
   try {
-    let stats = await UserStats.findOne({ user: req.user._id });
-    if (!stats) {
-      stats = await UserStats.create({ user: req.user._id });
-    }
+    const stats = await UserStats.findOneAndUpdate(
+      { user: req.user._id },
+      { $setOnInsert: { user: req.user._id } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
 
     res.status(200).json(stats.unlockedBadges);
   } catch (error) {

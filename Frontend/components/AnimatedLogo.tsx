@@ -1,6 +1,6 @@
 /**
  * AnimatedLogo.tsx
- * "Withs" wordmark brand.
+ * Custom geometric vector monogram logo for Ash_withs.
  * Pure code — zero image assets required.
  */
 import React, { useEffect } from 'react';
@@ -16,40 +16,38 @@ import Animated, {
   Easing,
   interpolate,
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { C } from '../constants/colors';
 
 interface AnimatedLogoProps {
   showSlogan?: boolean;
   entryDelay?: number;
   size?: 'small' | 'large';
+  animated?: boolean;
 }
 
 export function AnimatedLogo({
   showSlogan  = true,
   entryDelay  = 400,
   size        = 'large',
+  animated    = true,
 }: AnimatedLogoProps) {
   const isLarge = size === 'large';
+  const logoSize = isLarge ? 120 : 64;
 
-  const opacity   = useSharedValue(0);
-  const scaleVal  = useSharedValue(0.84);
+  const opacity   = useSharedValue(animated ? 0 : 1);
+  const scaleVal  = useSharedValue(animated ? 0.84 : 1);
   const floatY    = useSharedValue(0);
-  const glow      = useSharedValue(0);
-  const sloganOp  = useSharedValue(0);
-  const sloganY   = useSharedValue(10);
-  const shimmer   = useSharedValue(0);
+  const glow      = useSharedValue(animated ? 0 : 0.5);
+  const sloganOp  = useSharedValue(animated ? 0 : 1);
+  const sloganY   = useSharedValue(animated ? 10 : 0);
 
   useEffect(() => {
+    if (!animated) return;
+
     // Fade + spring scale
     opacity.value  = withDelay(entryDelay, withTiming(1, { duration: 1100, easing: Easing.out(Easing.cubic) }));
     scaleVal.value = withDelay(entryDelay, withSpring(1, { damping: 18, stiffness: 68 }));
-
-    // Shimmer sweep (one-shot)
-    shimmer.value = withDelay(
-      entryDelay + 200,
-      withTiming(1, { duration: 1800, easing: Easing.inOut(Easing.cubic) })
-    );
 
     // Float loop
     floatY.value = withDelay(
@@ -80,7 +78,7 @@ export function AnimatedLogo({
     // Slogan reveal
     sloganOp.value = withDelay(entryDelay + 900, withTiming(1, { duration: 900, easing: Easing.out(Easing.cubic) }));
     sloganY.value  = withDelay(entryDelay + 900, withTiming(0, { duration: 800, easing: Easing.out(Easing.cubic) }));
-  }, []);
+  }, [animated]);
 
   const containerStyle = useAnimatedStyle(() => ({
     opacity:   opacity.value,
@@ -98,16 +96,6 @@ export function AnimatedLogo({
     transform: [{ translateY: sloganY.value }],
   }));
 
-  const shimmerStyle = useAnimatedStyle(() => ({
-    opacity:   interpolate(shimmer.value, [0, 0.4, 0.85, 1], [0, 0.7, 0.5, 0]),
-    transform: [{ translateX: interpolate(shimmer.value, [0, 1], [-200, 200]) }],
-  }));
-
-  const wordSize  = isLarge ? 72 : 30;
-  const glowW     = isLarge ? 300 : 150;
-  const glowH     = isLarge ? 90  : 50;
-  const letterSp  = isLarge ? 4   : 2;
-
   return (
     <Animated.View style={[styles.root, containerStyle]}>
 
@@ -116,43 +104,76 @@ export function AnimatedLogo({
         style={[
           styles.glow,
           {
-            width:        glowW,
-            height:       glowH,
-            borderRadius: glowH / 2,
+            width:        logoSize,
+            height:       logoSize,
+            borderRadius: logoSize / 2,
             shadowColor:  C.blue400,
           },
           glowStyle,
         ]}
       />
 
-      {/* ── "Zolo" main wordmark ──────────────────────────────── */}
-      <View style={styles.wordWrap}>
-        <Text style={[styles.word, { fontSize: wordSize, letterSpacing: letterSp }]}>
-          Zolo
-        </Text>
+      {/* ── Custom SVG Geometric Logo Monogram (Entry Screen) / Stylized Text (Login Screen) ── */}
+      {isLarge ? (
+        <View style={[styles.logoWrap, { width: logoSize, height: logoSize }]}>
+          <Svg width="100%" height="100%" viewBox="0 0 120 120">
+            <Defs>
+              <SvgLinearGradient id="logoGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+                <Stop offset="0%" stopColor="#3FA9F5" />
+                <Stop offset="35%" stopColor="#9EEBFF" />
+                <Stop offset="70%" stopColor="#FFF3D1" />
+                <Stop offset="100%" stopColor="#FFC887" />
+              </SvgLinearGradient>
+            </Defs>
 
-        {/* One-shot shimmer sweep */}
-        <Animated.View style={[styles.shimmer, shimmerStyle]} pointerEvents="none">
-          <LinearGradient
-            colors={['transparent', 'rgba(255,255,255,0.55)', 'transparent']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={StyleSheet.absoluteFill}
-          />
-        </Animated.View>
-      </View>
+            {/* Outer partial circle arc */}
+            <Path
+              d="M 28,93 A 46,46 0 1,1 82,20"
+              fill="none"
+              stroke="url(#logoGrad)"
+              strokeWidth={6.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
 
-      {/* Thin accent rule */}
-      {isLarge && (
-        <LinearGradient
-          colors={['transparent', C.blue400, 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.underline}
-        />
+            {/* Top-right dot */}
+            <Circle
+              cx={96}
+              cy={20}
+              r={5}
+              fill="url(#logoGrad)"
+            />
+
+            {/* Inner Mountain peak "A" */}
+            <Path
+              d="M 24,94 L 60,30 L 82,58"
+              fill="none"
+              stroke="url(#logoGrad)"
+              strokeWidth={6.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+
+            {/* Inner Wave "W" */}
+            <Path
+              d="M 38,76 L 50,94 L 63,70 L 76,94 L 98,60"
+              fill="none"
+              stroke="url(#logoGrad)"
+              strokeWidth={6.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </Svg>
+        </View>
+      ) : (
+        <View style={styles.wordWrap}>
+          <Text style={[styles.word, { fontSize: 32, letterSpacing: 2 }]}>
+            To|Do
+          </Text>
+        </View>
       )}
 
-      {/* ── Slogan ────────────────────────────────────────────── */}
+      {/* ── Slogan ── */}
       {showSlogan && (
         <Animated.Text style={[styles.slogan, sloganStyle]}>
           Ash_withs
@@ -174,32 +195,25 @@ const styles = StyleSheet.create({
     shadowOpacity:   0,
     elevation:       0,
   },
+  logoWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+  },
   wordWrap: {
     overflow: 'hidden',
   },
   word: {
-    fontWeight:         '700',
+    fontWeight:         '900',
     color:              '#FFFFFF',
     includeFontPadding: false,
   },
-  shimmer: {
-    position: 'absolute',
-    top: 0, bottom: 0,
-    left: -50,
-    width: 100,
-  },
-  underline: {
-    height:    1,
-    width:     '60%',
-    marginTop: 8,
-    opacity:   0.40,
-  },
   slogan: {
-    marginTop:     10,
-    fontSize:      10.5,
-    fontWeight:    '500',
-    color:         C.text25,
-    letterSpacing: 3,
+    marginTop:     12,
+    fontSize:      11,
+    fontWeight:    '700',
+    color:         C.text45,
+    letterSpacing: 4,
     textTransform: 'uppercase',
   },
 });

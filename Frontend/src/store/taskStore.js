@@ -159,6 +159,9 @@ export const useTaskStore = create((set, get) => ({
       // Re-evaluate smart productivity inactivity reminders
       await checkAndManageInactivityAlerts(get().tasks);
 
+      // Refresh gamification stats to instantly reflect task deletion in the Productivity Hub UI!
+      await useGamificationStore.getState().fetchGamificationStats();
+
       return { success: true, message: response.data.message };
     } catch (error) {
       set({ loading: false });

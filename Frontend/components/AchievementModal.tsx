@@ -25,6 +25,11 @@ const RARITY_COLORS = {
   legendary: { text: '#FFD700', border: 'rgba(255,215,0,0.4)',   glow: '#FFD700', name: 'Legendary' }
 };
 
+function interpolateGlowOpacity(val: number) {
+  'worklet';
+  return 0.3 + (val - 1) * 3; // fades in/out beautifully
+}
+
 export function AchievementModal() {
   const { newlyUnlockedBadge, clearUnlockedBadgePopup } = useGamificationStore();
 
@@ -55,9 +60,7 @@ export function AchievementModal() {
     }
   }, [newlyUnlockedBadge]);
 
-  if (!newlyUnlockedBadge) return null;
-
-  const rarity = newlyUnlockedBadge.rarity || 'common';
+  const rarity = newlyUnlockedBadge?.rarity || 'common';
   const theme = RARITY_COLORS[rarity as keyof typeof RARITY_COLORS] || RARITY_COLORS.common;
 
   const modalStyle = useAnimatedStyle(() => ({
@@ -70,11 +73,6 @@ export function AchievementModal() {
     opacity: interpolateGlowOpacity(glow.value)
   }));
 
-  function interpolateGlowOpacity(val: number) {
-    'worklet';
-    return 0.3 + (val - 1) * 3; // fades in/out beautifully
-  }
-
   const handleClose = () => {
     scale.value = withTiming(0, { duration: 250 }, () => {
       opacity.value = withTiming(0, { duration: 100 }, () => {
@@ -82,6 +80,8 @@ export function AchievementModal() {
       });
     });
   };
+
+  if (!newlyUnlockedBadge) return null;
 
   return (
     <Modal transparent visible={!!newlyUnlockedBadge} animationType="none">

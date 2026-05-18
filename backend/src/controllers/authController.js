@@ -1,4 +1,6 @@
 import User from '../models/User.js';
+import UserStats from '../models/UserStats.js';
+import FocusStats from '../models/FocusStats.js';
 import { generateToken } from '../utils/generateToken.js';
 import bcrypt from 'bcryptjs';
 import validator from 'validator';
@@ -41,6 +43,17 @@ export const signupUser = async (req, res) => {
     });
 
     if (user) {
+      // Pre-create blank UserStats and FocusStats default records to avoid E11000 duplicate upsert conflicts
+      try {
+        await Promise.all([
+          UserStats.create({ user: user._id }),
+          FocusStats.create({ user: user._id })
+        ]);
+        console.log(`[Auth Signup] Automatically pre-created UserStats and FocusStats records for user ${user._id}`);
+      } catch (statsErr) {
+        console.error(`[Auth Signup] Non-blocking stats creation warning for user ${user._id}:`, statsErr);
+      }
+
       // 5. Generate token & response
       const token = generateToken(user._id);
 

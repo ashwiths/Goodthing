@@ -299,8 +299,28 @@ export default function TasksScreen() {
       borderWidth: 1, borderColor: P.borderSub,
       backgroundColor: 'rgba(255,255,255,0.04)'
     },
-    filterActive: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 18, borderWidth: 1, borderColor: P.blue },
-    filterBtn:    { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: P.borderSub },
+    filterActive: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 18,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.28)',
+      shadowColor: P.blue,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.45,
+      shadowRadius: 10,
+      elevation: 6
+    },
+    filterBtn: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 18,
+      backgroundColor: 'rgba(255,255,255,0.03)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.06)',
+      overflow: 'hidden'
+    },
     filterTxtActive: { fontSize: 13, fontWeight: '700', color: P.white },
     filterTxt:       { fontSize: 13, fontWeight: '600', color: P.dimmer },
     secHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14, marginTop: 10 },

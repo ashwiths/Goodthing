@@ -8,6 +8,7 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withSpring,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSettingsStore } from '../../store/settingsStore';
 
 type TabItem = {
   name: string;
@@ -56,23 +57,31 @@ function TabButton({ tab, isFocused, onPress }: { tab: TabItem; isFocused: boole
 
 function FloatingTabBar({ state, navigation }: { state: any; navigation: any }) {
   const insets = useSafeAreaInsets();
+  const { deepWorkZone } = useSettingsStore();
+
+  const visibleTabs = deepWorkZone 
+    ? TABS.filter(t => t.name === 'focus') 
+    : TABS.filter(t => t.name !== 'focus');
 
   return (
     <View style={[tb.outerWrap, { paddingBottom: insets.bottom + 6 }]}>
       {/* Outer glow */}
       <View style={tb.outerGlow} />
-      <BlurView intensity={55} tint="dark" style={tb.blur}>
+      <BlurView intensity={85} tint="dark" style={tb.blur}>
         {/* Top shine line */}
         <View style={tb.shine} />
         <View style={tb.row}>
-          {TABS.map((tab, i) => (
-            <TabButton
-              key={tab.name}
-              tab={tab}
-              isFocused={state.index === i}
-              onPress={() => navigation.navigate(tab.name)}
-            />
-          ))}
+          {visibleTabs.map((tab) => {
+            const isFocused = state.routes[state.index].name === tab.name;
+            return (
+              <TabButton
+                key={tab.name}
+                tab={tab}
+                isFocused={isFocused}
+                onPress={() => navigation.navigate(tab.name)}
+              />
+            );
+          })}
         </View>
       </BlurView>
     </View>
@@ -86,18 +95,18 @@ const tb = StyleSheet.create({
   },
   outerGlow: {
     position: 'absolute', bottom: 0, left: 40, right: 40, height: 1,
-    backgroundColor: 'rgba(79,165,255,0.22)',
+    backgroundColor: 'rgba(79,165,255,0.15)',
     shadowColor: '#4FA5FF', shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.4, shadowRadius: 20,
+    shadowOpacity: 0.35, shadowRadius: 20,
   },
   blur: {
     borderRadius: 30, overflow: 'hidden',
-    borderWidth: 1, borderColor: 'rgba(79,165,255,0.16)',
-    backgroundColor: 'rgba(6,4,16,0.45)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(3,2,6,0.82)',
   },
   shine: {
     position: 'absolute', top: 0, left: 32, right: 32, height: 1,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   row: { flexDirection: 'row', paddingTop: 10, paddingBottom: 6, paddingHorizontal: 4 },
   item: { flex: 1, alignItems: 'center' },

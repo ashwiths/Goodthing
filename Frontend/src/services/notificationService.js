@@ -7,6 +7,11 @@ import { Platform } from "react-native";
 
 // ─── Permission & channel setup ───────────────────────────────────────────────
 export async function registerForPushNotificationsAsync() {
+  if (Platform.OS === "web") {
+    console.log("[Notifications] Push notifications skipped on Web.");
+    return null;
+  }
+
   let token;
 
   if (Device.isDevice) {
@@ -53,6 +58,10 @@ export async function registerForPushNotificationsAsync() {
 
 // ─── Exported Request Notification Permission Helper ────────────────────────
 export async function requestNotificationPermission() {
+  if (Platform.OS === "web") {
+    return false;
+  }
+
   try {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -80,7 +89,9 @@ export function getReminderInterval(priority) {
 
 // ─── Smart Priority Task Reminder Scheduling ───────────────────────────────
 export async function scheduleTaskReminder(task) {
+  if (Platform.OS === "web") return null;
   if (!task || !task._id) return null;
+
   try {
     const identifier = `reminder-${task._id}`;
     
@@ -124,7 +135,9 @@ export async function scheduleTaskReminder(task) {
 
 // ─── Cancel a task's repeating reminder ──────────────────────────────────────
 export async function cancelTaskReminder(taskId) {
+  if (Platform.OS === "web") return;
   if (!taskId) return;
+
   try {
     const identifier = `reminder-${taskId}`;
     await Notifications.cancelScheduledNotificationAsync(identifier).catch(() => {});
@@ -136,6 +149,8 @@ export async function cancelTaskReminder(taskId) {
 
 // ─── Cancel All Task Notifications ───────────────────────────────────────────
 export async function cancelAllTaskNotifications() {
+  if (Platform.OS === "web") return;
+
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
     console.log("[Notifications] ✅ Cancelled all scheduled notifications.");
@@ -146,6 +161,8 @@ export async function cancelAllTaskNotifications() {
 
 // ─── One-shot local notification ──────────────────────────────────────────────
 export async function scheduleTaskReminderOneShot(title, body, seconds = 2) {
+  if (Platform.OS === "web") return;
+
   try {
     console.log(`[Notifications] One-shot "${title}" in ${seconds}s`);
     await Notifications.scheduleNotificationAsync({
@@ -163,6 +180,8 @@ export async function scheduleTaskReminderOneShot(title, body, seconds = 2) {
 
 // ─── Instant delete confirmation ──────────────────────────────────────────────
 export async function scheduleDeleteNotification() {
+  if (Platform.OS === "web") return;
+
   try {
     console.log("[Notifications] Scheduling delete notification...");
     await Notifications.scheduleNotificationAsync({
@@ -184,6 +203,8 @@ export async function scheduleDeleteNotification() {
 
 // ─── Task completion notification ─────────────────────────────────────────────
 export async function scheduleCompletionNotification(taskTitle) {
+  if (Platform.OS === "web") return;
+
   try {
     console.log(`[Notifications] Scheduling completion for "${taskTitle}"...`);
     await Notifications.scheduleNotificationAsync({
@@ -205,6 +226,8 @@ export async function scheduleCompletionNotification(taskTitle) {
 
 // ─── Daily inactivity reminder ────────────────────────────────────────────────
 export async function scheduleInactivityReminder() {
+  if (Platform.OS === "web") return;
+
   try {
     const identifier = "productivity-inactivity-reminder";
     await Notifications.scheduleNotificationAsync({
@@ -228,6 +251,8 @@ export async function scheduleInactivityReminder() {
 
 // ─── Inactivity alert lifecycle ───────────────────────────────────────────────
 export async function checkAndManageInactivityAlerts(tasks) {
+  if (Platform.OS === "web") return;
+
   try {
     const incompleteCount = tasks.filter(t => !t.completed).length;
     if (incompleteCount > 0) {
@@ -243,7 +268,9 @@ export async function checkAndManageInactivityAlerts(tasks) {
 
 // ─── Streak warning alerts ──────────────────────────────────────────────
 export async function scheduleStreakWarningNotification(currentStreak) {
+  if (Platform.OS === "web") return;
   if (!currentStreak || currentStreak <= 0) return;
+
   try {
     const identifier = "streak-warning-reminder";
     
@@ -261,7 +288,7 @@ export async function scheduleStreakWarningNotification(currentStreak) {
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: 72000, // 20 hours (gives 4 hours window to complete a task before day boundary resets it)
+        seconds: 72000,
       },
     });
     console.log("[Notifications] ✅ Streak warning scheduled.");
@@ -271,10 +298,32 @@ export async function scheduleStreakWarningNotification(currentStreak) {
 }
 
 export async function cancelStreakWarningNotification() {
+  if (Platform.OS === "web") return;
+
   try {
     await Notifications.cancelScheduledNotificationAsync("streak-warning-reminder").catch(() => {});
     console.log("[Notifications] ✅ Streak warning cancelled.");
   } catch (error) {
     console.error("[Notifications] ❌ cancelStreakWarningNotification failed:", error);
+  }
+}
+
+// ─── Deep mode active alert notification ──────────────────────────────────────
+export async function scheduleDeepModeActiveNotification() {
+  if (Platform.OS === "web") return;
+
+  try {
+    console.log("[Notifications] Triggering immediate Deep Mode reminder notification...");
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "🧘‍♂️ Deep Focus is active!",
+        body: "Deep Work Mode is running in the background. Open settings to turn it off.",
+        sound: true,
+      },
+      trigger: null, // trigger immediately
+    });
+    console.log("[Notifications] ✅ Deep Mode notification sent successfully.");
+  } catch (error) {
+    console.error("[Notifications] ❌ scheduleDeepModeActiveNotification failed:", error);
   }
 }
