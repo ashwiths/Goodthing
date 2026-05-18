@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { router } from 'expo-router';
 import { secureStorage } from '../utils/secureStorage.js';
 import API from '../api/api.js';
 
@@ -104,6 +105,12 @@ export const useAuthStore = create((set, get) => ({
       await secureStorage.removeItem('user');
 
       set({ token: null, user: null, loading: false });
+      
+      // Auto-redirect user back to login screen on profile disconnection
+      setTimeout(() => {
+        router.replace('/login');
+      }, 100);
+
       return { success: true };
     } catch (error) {
       set({ loading: false });
