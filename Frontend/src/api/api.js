@@ -1,20 +1,22 @@
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_BASE_URL } from '../config/api';
+import { secureStorage } from '../utils/secureStorage';
 
 // Reusable Axios instance
-// Using active local IPv4 address so the React Native client (iOS/Android device) can reach it
+// Configured to automatically target the serverless Vercel production API
 const API = axios.create({
-  baseURL: 'http://192.168.1.10:5000/api',
+  baseURL: API_BASE_URL,
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Request Interceptor to dynamically attach the token and timezone offset
+// Request Interceptor to dynamically attach the encrypted token and timezone offset
 API.interceptors.request.use(
   async (config) => {
-    const token = await AsyncStorage.getItem('token');
+    // Safely fetch token from native hardware keychain/SecureStore
+    const token = await secureStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
