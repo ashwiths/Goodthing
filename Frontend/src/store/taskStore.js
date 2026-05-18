@@ -1,30 +1,31 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import API from '../api/api.js';
+import {
+  cancelTaskReminder,
+  scheduleDeleteNotification,
+  scheduleCompletionNotification,
+  checkAndManageInactivityAlerts
+} from '../services/notificationService';
 
 export const useTaskStore = create((set, get) => ({
   tasks: [],
   loading: false,
 
-  // Helper to ensure authorization header is set
-  _ensureAuthHeader: async () => {
-    if (!API.defaults.headers.common['Authorization']) {
-      const token = await AsyncStorage.getItem('token');
-      if (token) {
-        API.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      }
-    }
-  },
+  // Axios request interceptor dynamically attaches the token inside src/api/api.js
 
   // Fetch all tasks of the logged-in user
   fetchTasks: async () => {
     set({ loading: true });
     try {
-      await get()._ensureAuthHeader();
       const response = await API.get('/tasks');
       
       // Update store tasks
       set({ tasks: response.data, loading: false });
+
+      // Manage productivity inactivity reminders based on fetched tasks
+      await checkAndManageInactivityAlerts(response.data);
+
       return { success: true };
     } catch (error) {
       set({ loading: false });
@@ -38,7 +39,6 @@ export const useTaskStore = create((set, get) => ({
   createTask: async (taskData) => {
     set({ loading: true });
     try {
-      await get()._ensureAuthHeader();
       const response = await API.post('/tasks', taskData);
       const newTask = response.data;
 
@@ -47,6 +47,9 @@ export const useTaskStore = create((set, get) => ({
         tasks: [newTask, ...state.tasks],
         loading: false,
       }));
+
+      // Re-evaluate smart productivity inactivity reminders
+      await checkAndManageInactivityAlerts(get().tasks);
 
       return { success: true, task: newTask };
     } catch (error) {
@@ -61,7 +64,6 @@ export const useTaskStore = create((set, get) => ({
   updateTask: async (id, updatedData) => {
     set({ loading: true });
     try {
-      await get()._ensureAuthHeader();
       const response = await API.put(`/tasks/${id}`, updatedData);
       const updatedTask = response.data;
 
@@ -72,6 +74,15 @@ export const useTaskStore = create((set, get) => ({
         ),
         loading: false,
       }));
+
+      // Cancel reminder + show completion notification if task is now done
+      if (updatedTask.completed) {
+        await cancelTaskReminder(id);
+        await scheduleCompletionNotification(updatedTask.title);
+      }
+
+      // Re-evaluate smart productivity inactivity reminders
+      await checkAndManageInactivityAlerts(get().tasks);
 
       return { success: true, task: updatedTask };
     } catch (error) {
@@ -86,7 +97,6 @@ export const useTaskStore = create((set, get) => ({
   deleteTask: async (id) => {
     set({ loading: true });
     try {
-      await get()._ensureAuthHeader();
       const response = await API.delete(`/tasks/${id}`);
 
       // Immutable filter update
@@ -94,6 +104,13 @@ export const useTaskStore = create((set, get) => ({
         tasks: state.tasks.filter((task) => task._id !== id),
         loading: false,
       }));
+
+      // Cancel task reminders and trigger delete notification
+      await cancelTaskReminder(id);
+      await scheduleDeleteNotification();
+
+      // Re-evaluate smart productivity inactivity reminders
+      await checkAndManageInactivityAlerts(get().tasks);
 
       return { success: true, message: response.data.message };
     } catch (error) {

@@ -5,7 +5,10 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
 import { StyleSheet, Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { C } from '../constants/colors';
+import { registerForPushNotificationsAsync } from '../src/services/notificationService';
+import { useAuthStore } from '../src/store/authStore';
 
 if (Platform.OS === 'web') {
   try {
@@ -17,6 +20,29 @@ if (Platform.OS === 'web') {
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  const { loadUser } = useAuthStore();
+
+  useEffect(() => {
+    // ── Ensure notification handler is always registered first ──
+    // This must run before any notification can be displayed,
+    // including after hot reloads in Expo Go.
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+
+    loadUser();
+
+    registerForPushNotificationsAsync().catch(err => {
+      console.warn("Notification permission setup skipped or failed:", err);
+    });
+  }, []);
+
   useEffect(() => {
     // Hide splash after a short delay
     const timer = setTimeout(() => {

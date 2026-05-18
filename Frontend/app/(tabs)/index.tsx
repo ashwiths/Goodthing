@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
-  TextInput, Dimensions, StatusBar,
+  TextInput, Dimensions, StatusBar, Alert,
 } from 'react-native';
 import Animated, {
   useSharedValue, useAnimatedStyle, withTiming,
@@ -18,6 +18,8 @@ import { router } from 'expo-router';
 import { CinematicBackground } from '../../components/CinematicBackground';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { fireHaptic, fireSuccessHaptic } from '../../utils/haptics';
+import { useTaskStore } from '../../src/store/taskStore';
+import { ActivityIndicator } from 'react-native';
 
 const { width: W } = Dimensions.get('window');
 
@@ -28,13 +30,6 @@ type Task = {
   id: string; title: string; time: string;
   accent: string; completed: boolean; tag: string;
 };
-
-const SEED_TASKS: Task[] = [
-  { id:'1', title:'Finish React Native UI',  time:'10 AM',  accent:'#4FA5FF', completed:false, tag:'Focus'    },
-  { id:'2', title:'Gym at 6 AM',             time:'6 AM',   accent:'#4ECDC4', completed:false, tag:'Health'   },
-  { id:'3', title:'Drink 3L Water',          time:'All day',accent:'#45B7D1', completed:true,  tag:'Health'   },
-  { id:'4', title:'Complete Assignment',     time:'11 PM',  accent:'#F7DC6F', completed:false, tag:'Study'    },
-];
 
 // ─── FadeUp wrapper ───────────────────────────────────────────────────────────
 function FadeUp({ delay = 0, children }: { delay?: number; children: React.ReactNode }) {
@@ -68,12 +63,12 @@ function GlowBtn({ onPress }: { onPress: () => void }) {
   const addBtn = StyleSheet.create({
     halo: {
       position: 'absolute', width: 54, height: 54, borderRadius: 27,
-      backgroundColor: P.violet,
+      backgroundColor: P.purple,
     },
     btn: {
       width: 42, height: 42, borderRadius: 14,
       alignItems: 'center', justifyContent: 'center',
-      shadowColor: P.violet, shadowOffset: { width: 0, height: 6 },
+      shadowColor: P.purple, shadowOffset: { width: 0, height: 6 },
       shadowOpacity: 0.7, shadowRadius: 14, elevation: 12,
     },
   });
@@ -82,7 +77,7 @@ function GlowBtn({ onPress }: { onPress: () => void }) {
     <Pressable onPress={onPress}>
       <View style={{ alignItems: 'center', justifyContent: 'center' }}>
         <Animated.View style={[addBtn.halo, glow]} />
-        <LinearGradient colors={[P.violet, P.violet2]} style={addBtn.btn}>
+        <LinearGradient colors={[P.purple, P.purple2]} style={addBtn.btn}>
           <Ionicons name="add" size={22} color="#fff" />
         </LinearGradient>
       </View>
@@ -138,7 +133,7 @@ function StatCard({ label, value, color, chart }: {
 }
 
 // ─── Task Card ────────────────────────────────────────────────────────────────
-function TaskCard({ task, onToggle }: { task: Task; onToggle: () => void }) {
+function TaskCard({ task, onToggle, onDelete }: { task: Task; onToggle: () => void; onDelete: () => void }) {
   const { P, getBlurIntensity, getGlowStyles } = useAppTheme();
   const tc = React.useMemo(() => StyleSheet.create({
     card: {
@@ -180,22 +175,82 @@ function TaskCard({ task, onToggle }: { task: Task; onToggle: () => void }) {
 
   return (
     <Animated.View style={animCard}>
-      <Pressable onPressIn={onPressIn} onPressOut={onPressOut} onPress={handlePress} style={tc.card}>
+      <View style={tc.card}>
         <BlurView intensity={getBlurIntensity(30)} tint="dark" style={StyleSheet.absoluteFill} />
-        <View style={tc.cbx}>
-          <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: P.blue, borderRadius: 6, ...getGlowStyles(0.3, 10) }, animCheck]} />
-          <Animated.View style={animCheck}>
-            <Ionicons name="checkmark" size={16} color={P.bg} />
-          </Animated.View>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[tc.title, task.completed && { textDecorationLine: 'line-through', color: P.dim }]}>
-            {task.title}
-          </Text>
-          <Text style={tc.time}>{task.time}</Text>
-        </View>
-      </Pressable>
+        
+        {/* Checkbox and Text fields */}
+        <Pressable 
+          onPressIn={onPressIn} 
+          onPressOut={onPressOut} 
+          onPress={handlePress} 
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+        >
+          <View style={tc.cbx}>
+            <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: P.blue, borderRadius: 6, ...getGlowStyles(0.3, 10) }, animCheck]} />
+            <Animated.View style={animCheck}>
+              <Ionicons name="checkmark" size={16} color={P.bg} />
+            </Animated.View>
+          </View>
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <Text style={[tc.title, task.completed && { textDecorationLine: 'line-through', color: P.dim }]}>
+              {task.title}
+            </Text>
+            <Text style={tc.time}>{task.time}</Text>
+          </View>
+        </Pressable>
+
+        {/* Cinematic trash button */}
+        <Pressable 
+          onPress={onDelete}
+          style={({ pressed }) => [
+            {
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: pressed ? 'rgba(255, 75, 75, 0.22)' : 'rgba(255, 75, 75, 0.06)',
+              borderWidth: 1,
+              borderColor: pressed ? 'rgba(255, 75, 75, 0.40)' : 'rgba(255, 75, 75, 0.14)',
+              shadowColor: '#FF4B4B',
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: pressed ? 0.5 : 0.15,
+              shadowRadius: pressed ? 6 : 3,
+            }
+          ]}
+        >
+          <Ionicons name="trash-outline" size={15} color="#FF6B6B" />
+        </Pressable>
+      </View>
     </Animated.View>
+  );
+}
+
+function EmptyState() {
+  const { P } = useAppTheme();
+  return (
+    <FadeUp delay={100}>
+      <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 16 }}>
+        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: P.blue + '20', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: P.blue + '40' }}>
+          <Ionicons name="sparkles" size={32} color={P.blue} />
+        </View>
+        <Text style={{ fontSize: 20, fontWeight: '800', color: P.white, letterSpacing: -0.5 }}>No tasks yet</Text>
+        <Text style={{ fontSize: 14, color: P.dim, textAlign: 'center', paddingHorizontal: 40 }}>Your day is clear. Take a breath or start planning your next move.</Text>
+        <Pressable onPress={() => router.push('/add-task' as any)} style={{ marginTop: 10, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 20, backgroundColor: P.blue, shadowColor: P.blue, shadowOpacity: 0.5, shadowRadius: 10, elevation: 5 }}>
+          <Text style={{ color: P.bg, fontWeight: '700', fontSize: 14 }}>Create Your First Task</Text>
+        </Pressable>
+      </View>
+    </FadeUp>
+  );
+}
+
+function LoadingState() {
+  const { P } = useAppTheme();
+  return (
+    <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60 }}>
+      <ActivityIndicator size="large" color={P.blue} />
+      <Text style={{ marginTop: 16, color: P.dim, fontWeight: '600' }}>Syncing Tasks...</Text>
+    </View>
   );
 }
 
@@ -203,7 +258,12 @@ function TaskCard({ task, onToggle }: { task: Task; onToggle: () => void }) {
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { P, getBlurIntensity, getGlowStyles, minimalMode } = useAppTheme();
-  
+  const { tasks, fetchTasks, loading, updateTask, deleteTask } = useTaskStore();
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
   const s = React.useMemo(() => StyleSheet.create({
     root: { flex: 1, backgroundColor: P.bg },
     content: { paddingHorizontal: 22 },
@@ -259,16 +319,48 @@ export default function HomeScreen() {
     progressPct:   { fontSize: 13, fontWeight: '800', color: P.blue, minWidth: 38, textAlign: 'right' },
   }), [P, getGlowStyles]);
 
-  const [todoTasks, setTodoTasks] = useState<Task[]>(SEED_TASKS);
   const [activeChip, setChip]     = useState('Focus');
 
-  const done    = todoTasks.filter(t => t.completed).length;
-  const pending = todoTasks.filter(t => !t.completed).length;
-  const pct     = Math.round((done / todoTasks.length) * 100);
+  const done    = tasks.filter((t: any) => t.completed).length;
+  const pending = tasks.filter((t: any) => !t.completed).length;
+  const total   = tasks.length;
+  const pct     = total === 0 ? 0 : Math.round((done / total) * 100);
 
-  const toggle = useCallback((id: string) => {
-    setTodoTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
-  }, []);
+  const toggle = async (id: string) => {
+    const task = tasks.find((t: any) => t._id === id);
+    if (task) {
+      fireHaptic('light');
+      await updateTask(task._id, { completed: !task.completed });
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    fireHaptic('medium');
+    Alert.alert(
+      "Delete Task",
+      "Are you sure you want to remove this task?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive",
+          onPress: async () => {
+            fireSuccessHaptic();
+            await deleteTask(id);
+          }
+        }
+      ]
+    );
+  };
+
+  const displayTasks = tasks.map((t: any) => ({
+    id: t._id,
+    title: t.title,
+    time: t.dueDate ? new Date(t.dueDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Today',
+    accent: t.priority === 'High' ? '#FF6B6B' : (t.priority === 'Medium' ? '#F7DC6F' : '#4ECDC4'),
+    completed: t.completed,
+    tag: t.category || 'General',
+  }));
 
   return (
     <View style={s.root}>
@@ -378,17 +470,23 @@ export default function HomeScreen() {
         {/* ── Tasks ───────────────────────────────────────── */}
         <FadeUp delay={360}>
           <View style={s.sectionRow}>
-            <Text style={s.sectionLabel}>Tomorrow's Plan</Text>
+            <Text style={s.sectionLabel}>Your Tasks</Text>
             <View style={s.countBadge}>
-              <Text style={s.countTxt}>{todoTasks.length}</Text>
+              <Text style={s.countTxt}>{displayTasks.length}</Text>
             </View>
           </View>
         </FadeUp>
 
         <FadeUp delay={420}>
-          {todoTasks.map(t => (
-            <TaskCard key={t.id} task={t} onToggle={() => toggle(t.id)} />
-          ))}
+          {loading && displayTasks.length === 0 ? (
+            <LoadingState />
+          ) : displayTasks.length === 0 ? (
+            <EmptyState />
+          ) : (
+            displayTasks.map((t: any) => (
+              <TaskCard key={t.id} task={t as any} onToggle={() => toggle(t.id)} onDelete={() => handleDelete(t.id)} />
+            ))
+          )}
         </FadeUp>
 
       </ScrollView>

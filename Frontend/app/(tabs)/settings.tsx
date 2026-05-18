@@ -145,7 +145,7 @@ function StorageRing({ percent, color }: { percent: number, color: string }) {
           transform={`rotate(-90 ${size/2} ${size/2})`}
         />
       </Svg>
-      <View style={StyleSheet.absoluteFillObject} style={[{ alignItems: 'center', justifyContent: 'center' }, StyleSheet.absoluteFill]}>
+      <View style={[{ alignItems: 'center', justifyContent: 'center' }, StyleSheet.absoluteFill]}>
         <Ionicons name="cloud-done" size={16} color={color} />
       </View>
     </View>

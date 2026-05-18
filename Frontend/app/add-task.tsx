@@ -4,11 +4,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, Pressable,
-  KeyboardAvoidingView, Platform, ScrollView, StatusBar,
+  KeyboardAvoidingView, Platform, ScrollView, StatusBar, Alert,
 } from 'react-native';
 import Animated, {
   useSharedValue, useAnimatedStyle, withTiming, withSpring,
-  interpolateColor, interpolate, Easing, withRepeat, withSequence,
+  interpolateColor, interpolate, Easing, withRepeat, withSequence, FadeInUp
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +19,8 @@ import { CinematicBackground } from '../components/CinematicBackground';
 
 import { useAppTheme } from '../hooks/useAppTheme';
 import { fireHaptic, fireSuccessHaptic } from '../utils/haptics';
+import { useTaskStore } from '../src/store/taskStore';
+import { scheduleTaskReminder, scheduleRepeatingTaskReminder } from '../src/services/notificationService';
 
 const CATEGORIES = ['Study', 'Health', 'Personal', 'Work', 'Focus'];
 const PRIORITIES = ['Low', 'Medium', 'High'] as const;
@@ -154,11 +156,11 @@ const tc = StyleSheet.create({
 });
 
 // ─── Floating Create Button ───────────────────────────────────────────────────
-function CreateButton({ onPress, disabled }: { onPress: () => void; disabled: boolean }) {
+function CreateButton({ onPress, disabled, loading }: { onPress: () => void; disabled: boolean; loading: boolean }) {
   const { P, getBlurIntensity, getGlowStyles } = useAppTheme();
   const pulse = useSharedValue(1);
   useEffect(() => {
-    if (!disabled) {
+    if (!disabled && !loading) {
       pulse.value = withRepeat(withSequence(
         withTiming(1.05, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
         withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.ease) })
@@ -166,18 +168,18 @@ function CreateButton({ onPress, disabled }: { onPress: () => void; disabled: bo
     } else {
       pulse.value = withTiming(1);
     }
-  }, [disabled]);
+  }, [disabled, loading]);
 
   const style = useAnimatedStyle(() => ({
     transform: [{ scale: pulse.value }],
-    opacity: disabled ? 0.5 : 1,
+    opacity: (disabled || loading) ? 0.5 : 1,
   }));
 
   return (
     <Animated.View style={[cb.wrap, style]}>
-      <Pressable onPress={onPress} disabled={disabled} style={[cb.btn, { backgroundColor: P.blue, ...getGlowStyles(0.5, 20) }]}>
-        <Text style={[cb.txt, { color: P.bg }]}>Create Task</Text>
-        <Ionicons name="arrow-forward" size={18} color={P.bg} style={{ marginLeft: 6 }} />
+      <Pressable onPress={onPress} disabled={disabled || loading} style={[cb.btn, { backgroundColor: P.blue, ...getGlowStyles(0.5, 20) }]}>
+        <Text style={[cb.txt, { color: P.bg }]}>{loading ? "Creating Task..." : "Create Task"}</Text>
+        {!loading && <Ionicons name="arrow-forward" size={18} color={P.bg} style={{ marginLeft: 6 }} />}
       </Pressable>
     </Animated.View>
   );
@@ -193,6 +195,7 @@ const cb = StyleSheet.create({
 export default function AddTaskScreen() {
   const insets = useSafeAreaInsets();
   const { P, getBlurIntensity } = useAppTheme();
+  const { createTask, loading } = useTaskStore();
 
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
@@ -200,9 +203,56 @@ export default function AddTaskScreen() {
   const [priority, setPriority] = useState<Priority>('Medium');
   const [reminder, setReminder] = useState(true);
 
-  const handleCreate = () => {
-    fireSuccessHaptic();
-    router.back();
+  const handleCreate = async () => {
+    if (!title.trim()) {
+      Alert.alert('Validation Error', 'Task title cannot be empty.');
+      return;
+    }
+
+    let reminderTime = undefined;
+    let dueDate = undefined;
+
+    if (reminder) {
+      // Set default reminderTime to tomorrow at 9:00 AM
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(9, 0, 0, 0);
+      reminderTime = tomorrow;
+
+      // Set default dueDate to tomorrow at 11:59 PM
+      const endOfTomorrow = new Date();
+      endOfTomorrow.setDate(endOfTomorrow.getDate() + 1);
+      endOfTomorrow.setHours(23, 59, 59, 999);
+      dueDate = endOfTomorrow;
+    }
+
+    const taskData = {
+      title: title.trim(),
+      description: desc.trim(),
+      priority,
+      category,
+      reminderTime,
+      dueDate,
+    };
+
+    const res = await createTask(taskData);
+    if (res.success) {
+      if (reminder) {
+        // iOS requires repeating timeInterval >= 60s. Using 60s for testing, 3600 for production.
+        await scheduleRepeatingTaskReminder(res.task._id, title.trim(), 60);
+        
+        // Trigger an instant notification immediately to confirm everything is working!
+        await scheduleTaskReminder(
+          "Task Created 🚀",
+          `Smart reminder is active for: ${title.trim()}`,
+          1
+        );
+      }
+      fireSuccessHaptic();
+      router.back();
+    } else {
+      Alert.alert('Error', res.message || 'Failed to create task.');
+    }
   };
 
   const s = React.useMemo(() => StyleSheet.create({
@@ -248,13 +298,13 @@ export default function AddTaskScreen() {
       <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 40 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         
         {/* Preview */}
-        <Animated.View entering={Animated.FadeInUp.delay(100).springify()}>
+        <Animated.View entering={FadeInUp.delay(100).springify()}>
           <Text style={s.sectionLabel}>Live Preview</Text>
           <LivePreviewCard title={title} category={category} priority={priority} />
         </Animated.View>
 
         {/* Input Details */}
-        <Animated.View entering={Animated.FadeInUp.delay(150).springify()} style={s.section}>
+        <Animated.View entering={FadeInUp.delay(150).springify()} style={s.section}>
           <Text style={s.sectionLabel}>Task Details</Text>
           <View style={{ gap: 16 }}>
             <GlassInput value={title} onChangeText={setTitle} placeholder="What needs to be done?" autoFocus />
@@ -263,7 +313,7 @@ export default function AddTaskScreen() {
         </Animated.View>
 
         {/* Category */}
-        <Animated.View entering={Animated.FadeInUp.delay(200).springify()} style={s.section}>
+        <Animated.View entering={FadeInUp.delay(200).springify()} style={s.section}>
           <Text style={s.sectionLabel}>Category</Text>
           <View style={s.chipsWrap}>
             {CATEGORIES.map(c => {
@@ -282,7 +332,7 @@ export default function AddTaskScreen() {
         </Animated.View>
 
         {/* Priority */}
-        <Animated.View entering={Animated.FadeInUp.delay(250).springify()} style={s.section}>
+        <Animated.View entering={FadeInUp.delay(250).springify()} style={s.section}>
           <Text style={s.sectionLabel}>Priority</Text>
           <View style={s.chipsWrap}>
             {PRIORITIES.map(p => {
@@ -302,7 +352,7 @@ export default function AddTaskScreen() {
         </Animated.View>
 
         {/* Reminder Toggle */}
-        <Animated.View entering={Animated.FadeInUp.delay(300).springify()} style={s.section}>
+        <Animated.View entering={FadeInUp.delay(300).springify()} style={s.section}>
           <View style={s.optRow}>
             <View style={s.optLeft}>
               <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: P.purple + '20', alignItems: 'center', justifyContent: 'center' }}>
@@ -318,8 +368,8 @@ export default function AddTaskScreen() {
         </Animated.View>
 
         {/* Submit */}
-        <Animated.View entering={Animated.FadeInUp.delay(350).springify()}>
-          <CreateButton onPress={handleCreate} disabled={!title.trim()} />
+        <Animated.View entering={FadeInUp.delay(350).springify()}>
+          <CreateButton onPress={handleCreate} disabled={!title.trim()} loading={loading} />
         </Animated.View>
 
       </ScrollView>

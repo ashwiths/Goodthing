@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, SectionList, Pressable,
-  Dimensions, StatusBar, Platform, ScrollView,
+  Dimensions, StatusBar, Platform, ScrollView, Alert,
 } from 'react-native';
 import Animated, {
   useSharedValue, useAnimatedStyle, withTiming,
@@ -20,6 +20,8 @@ import { router } from 'expo-router';
 import { CinematicBackground } from '../../components/CinematicBackground';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { fireHaptic, fireSuccessHaptic } from '../../utils/haptics';
+import { useTaskStore } from '../../src/store/taskStore';
+import { ActivityIndicator } from 'react-native';
 
 const { width: W } = Dimensions.get('window');
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -35,29 +37,7 @@ type TaskSection = {
   title: string; data: TaskItem[];
 };
 
-const INITIAL_SECTIONS: TaskSection[] = [
-  {
-    title: 'Morning Focus',
-    data: [
-      { id: 't1', title: 'Finish React Native animations', desc: 'Implement Reanimated SVG progress ring', time: '9:00 AM', priority: 'High', completed: false },
-      { id: 't2', title: 'Review UI spacing', desc: 'Check padding across all iOS devices', time: '11:30 AM', priority: 'Medium', completed: false },
-    ]
-  },
-  {
-    title: 'Afternoon Tasks',
-    data: [
-      { id: 't3', title: 'Gym workout', desc: 'Leg day + 20m cardio', time: '2:00 PM', priority: 'High', completed: false },
-      { id: 't4', title: 'Drink water', desc: 'Reach 3L goal', time: 'All day', priority: 'Low', completed: true },
-      { id: 't5', title: 'Team meeting', desc: 'Sync on weekly sprint', time: '4:00 PM', priority: 'Medium', completed: false },
-    ]
-  },
-  {
-    title: 'Evening Routine',
-    data: [
-      { id: 't6', title: 'Complete assignment', desc: 'Write the final project report', time: '8:00 PM', priority: 'High', completed: false },
-    ]
-  }
-];
+
 
 const FILTERS = ['All', 'Pending', 'Completed', 'High Priority'];
 
@@ -148,7 +128,7 @@ function ProgressRingCard({ total, completed }: { total: number; completed: numb
 }
 
 // ─── Task Item ────────────────────────────────────────────────────────────────
-function TaskRow({ task, onToggle }: { task: TaskItem; onToggle: () => void }) {
+function TaskRow({ task, onToggle, onDelete }: { task: TaskItem; onToggle: () => void; onDelete: () => void }) {
   const { P, getBlurIntensity, getGlowStyles } = useAppTheme();
   
   const getPriColor = (pri: Priority) => {
@@ -204,35 +184,94 @@ function TaskRow({ task, onToggle }: { task: TaskItem; onToggle: () => void }) {
 
   return (
     <Animated.View style={animCard}>
-      <Pressable onPressIn={onPressIn} onPressOut={onPressOut} onPress={handlePress} style={tr.card}>
+      <View style={tr.card}>
         <BlurView intensity={getBlurIntensity(25)} tint="dark" style={StyleSheet.absoluteFill} />
         
         {/* Left priority bar indicator */}
         <View style={[{ position: 'absolute', left: 0, top: 20, bottom: 20, width: 3, borderRadius: 2, backgroundColor: priColor, opacity: task.completed ? 0.3 : 1 }]} />
 
-        <View style={tr.cbx}>
-          <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: P.blue, borderRadius: 7, ...getGlowStyles(0.3, 10) }, animCheck]} />
-          <Animated.View style={animCheck}>
-            <Ionicons name="checkmark" size={18} color={P.bg} />
-          </Animated.View>
-        </View>
+        {/* Task description & Checkbox Pressable */}
+        <Pressable 
+          onPressIn={onPressIn} 
+          onPressOut={onPressOut} 
+          onPress={handlePress} 
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+        >
+          <View style={tr.cbx}>
+            <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: P.blue, borderRadius: 7, ...getGlowStyles(0.3, 10) }, animCheck]} />
+            <Animated.View style={animCheck}>
+              <Ionicons name="checkmark" size={18} color={P.bg} />
+            </Animated.View>
+          </View>
 
-        <View style={tr.info}>
-          <Text style={[tr.title, task.completed && { textDecorationLine: 'line-through', color: P.dim }]}>{task.title}</Text>
-          <Text style={tr.desc} numberOfLines={2}>{task.desc}</Text>
-          <View style={tr.bottomRow}>
-            <View style={tr.metaWrap}>
-              <Ionicons name="time-outline" size={13} color={P.dimmer} />
-              <Text style={tr.metaTxt}>{task.time}</Text>
-            </View>
-            <View style={tr.metaWrap}>
-              <View style={[tr.priDot, { backgroundColor: priColor }]} />
-              <Text style={tr.metaTxt}>{task.priority}</Text>
+          <View style={[tr.info, { paddingRight: 8 }]}>
+            <Text style={[tr.title, task.completed && { textDecorationLine: 'line-through', color: P.dim }]}>{task.title}</Text>
+            <Text style={tr.desc} numberOfLines={2}>{task.desc}</Text>
+            <View style={tr.bottomRow}>
+              <View style={tr.metaWrap}>
+                <Ionicons name="time-outline" size={13} color={P.dimmer} />
+                <Text style={tr.metaTxt}>{task.time}</Text>
+              </View>
+              <View style={tr.metaWrap}>
+                <View style={[tr.priDot, { backgroundColor: priColor }]} />
+                <Text style={tr.metaTxt}>{task.priority}</Text>
+              </View>
             </View>
           </View>
-        </View>
-      </Pressable>
+        </Pressable>
+
+        {/* Cinematic trash button */}
+        <Pressable 
+          onPress={onDelete}
+          style={({ pressed }) => [
+            {
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: pressed ? 'rgba(255, 75, 75, 0.22)' : 'rgba(255, 75, 75, 0.06)',
+              borderWidth: 1,
+              borderColor: pressed ? 'rgba(255, 75, 75, 0.40)' : 'rgba(255, 75, 75, 0.14)',
+              shadowColor: '#FF4B4B',
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: pressed ? 0.5 : 0.15,
+              shadowRadius: pressed ? 6 : 3,
+            }
+          ]}
+        >
+          <Ionicons name="trash-outline" size={16} color="#FF6B6B" />
+        </Pressable>
+      </View>
     </Animated.View>
+  );
+}
+
+function EmptyState() {
+  const { P } = useAppTheme();
+  return (
+    <FadeUp delay={100}>
+      <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 16 }}>
+        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: P.blue + '20', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: P.blue + '40' }}>
+          <Ionicons name="sparkles" size={32} color={P.blue} />
+        </View>
+        <Text style={{ fontSize: 20, fontWeight: '800', color: P.white, letterSpacing: -0.5 }}>No tasks yet</Text>
+        <Text style={{ fontSize: 14, color: P.dim, textAlign: 'center', paddingHorizontal: 40 }}>Your day is clear. Take a breath or start planning your next move.</Text>
+        <Pressable onPress={() => router.push('/add-task' as any)} style={{ marginTop: 10, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 20, backgroundColor: P.blue, shadowColor: P.blue, shadowOpacity: 0.5, shadowRadius: 10, elevation: 5 }}>
+          <Text style={{ color: P.bg, fontWeight: '700', fontSize: 14 }}>Create Your First Task</Text>
+        </Pressable>
+      </View>
+    </FadeUp>
+  );
+}
+
+function LoadingState() {
+  const { P } = useAppTheme();
+  return (
+    <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60 }}>
+      <ActivityIndicator size="large" color={P.blue} />
+      <Text style={{ marginTop: 16, color: P.dim, fontWeight: '600' }}>Syncing Tasks...</Text>
+    </View>
   );
 }
 
@@ -240,8 +279,12 @@ function TaskRow({ task, onToggle }: { task: TaskItem; onToggle: () => void }) {
 export default function TasksScreen() {
   const insets = useSafeAreaInsets();
   const { P, getBlurIntensity, minimalMode } = useAppTheme();
+  const { tasks, fetchTasks, loading, updateTask, deleteTask } = useTaskStore();
 
-  const [sections, setSections] = useState<TaskSection[]>(INITIAL_SECTIONS);
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
   const [filter, setFilter]     = useState('All');
 
   const s = React.useMemo(() => StyleSheet.create({
@@ -265,19 +308,59 @@ export default function TasksScreen() {
     secLine:   { flex: 1, height: 1, backgroundColor: P.borderSub },
   }), [P]);
 
-  const toggleTask = useCallback((taskId: string) => {
-    setSections(prev => prev.map(sec => ({
-      ...sec,
-      data: sec.data.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t)
-    })));
-  }, []);
+  const toggleTask = async (taskId: string) => {
+    const task = tasks.find((t: any) => t._id === taskId);
+    if (task) {
+      fireHaptic('light');
+      await updateTask(task._id, { completed: !task.completed });
+    }
+  };
 
-  const totalTasks = sections.reduce((sum, sec) => sum + sec.data.length, 0);
-  const doneTasks  = sections.reduce((sum, sec) => sum + sec.data.filter(t => t.completed).length, 0);
+  const handleDeleteTask = async (id: string) => {
+    fireHaptic('medium');
+    Alert.alert(
+      "Delete Task",
+      "Are you sure you want to remove this task?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            fireSuccessHaptic();
+            await deleteTask(id);
+          }
+        }
+      ]
+    );
+  };
+
+  const totalTasks = tasks.length;
+  const doneTasks  = tasks.filter((t: any) => t.completed).length;
+
+  // Group tasks dynamically
+  const grouped = tasks.reduce((acc: any, t: any) => {
+    const cat = t.category || 'General';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push({
+      id: t._id,
+      title: t.title,
+      desc: t.description || 'No description',
+      time: t.dueDate ? new Date(t.dueDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Today',
+      priority: t.priority || 'Medium',
+      completed: t.completed,
+    });
+    return acc;
+  }, {});
+
+  const dynamicSections: TaskSection[] = Object.keys(grouped).map(key => ({
+    title: key,
+    data: grouped[key]
+  }));
 
   // Apply filters
-  const filteredSections = sections.map(sec => {
-    const filteredData = sec.data.filter(t => {
+  const filteredSections = dynamicSections.map(sec => {
+    const filteredData = sec.data.filter((t: any) => {
       if (filter === 'Pending') return !t.completed;
       if (filter === 'Completed') return t.completed;
       if (filter === 'High Priority') return t.priority === 'High';
@@ -350,9 +433,10 @@ export default function TasksScreen() {
 
         renderItem={({ item, index }) => (
           <FadeUp delay={300 + (index * 50)}>
-            <TaskRow task={item} onToggle={() => toggleTask(item.id)} />
+            <TaskRow task={item} onToggle={() => toggleTask(item.id)} onDelete={() => handleDeleteTask(item.id)} />
           </FadeUp>
         )}
+        ListEmptyComponent={loading ? <LoadingState /> : <EmptyState />}
       />
     </View>
   );

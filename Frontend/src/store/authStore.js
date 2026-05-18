@@ -18,8 +18,7 @@ export const useAuthStore = create((set, get) => ({
       await AsyncStorage.setItem('token', token);
       await AsyncStorage.setItem('user', JSON.stringify(user));
 
-      // Attach token to default API headers for subsequent requests
-      API.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      // Axios interceptor will dynamically attach this token to future requests
 
       set({ token, user, loading: false });
       return { success: true, message };
@@ -41,8 +40,7 @@ export const useAuthStore = create((set, get) => ({
       await AsyncStorage.setItem('token', token);
       await AsyncStorage.setItem('user', JSON.stringify(user));
 
-      // Attach token to default API headers for subsequent requests
-      API.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      // Axios interceptor will dynamically attach this token to future requests
 
       set({ token, user, loading: false });
       return { success: true, message };
@@ -63,8 +61,7 @@ export const useAuthStore = create((set, get) => ({
       if (token && userJSON) {
         const user = JSON.parse(userJSON);
         
-        // Attach token to default API headers
-        API.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        // Axios interceptor handles token attachment automatically
         
         set({ token, user, loading: false });
         return { success: true };
@@ -85,8 +82,7 @@ export const useAuthStore = create((set, get) => ({
       await AsyncStorage.removeItem('token');
       await AsyncStorage.removeItem('user');
 
-      // Clear default API authorization header
-      delete API.defaults.headers.common['Authorization'];
+      // Interceptor will automatically see token is gone
 
       set({ token: null, user: null, loading: false });
       return { success: true };

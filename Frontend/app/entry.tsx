@@ -15,6 +15,7 @@ import Animated, {
 import { router } from 'expo-router';
 import { CinematicBackground } from '../components/CinematicBackground';
 import { AnimatedLogo } from '../components/AnimatedLogo';
+import { useAuthStore } from '../src/store/authStore';
 import { C } from '../constants/colors';
 
 export default function EntryScreen() {
@@ -29,7 +30,12 @@ export default function EntryScreen() {
 
     // Auto-navigate after 3.2 s
     const timer = setTimeout(() => {
-      router.replace('/login' as any);
+      const activeToken = useAuthStore.getState().token;
+      if (activeToken) {
+        router.replace('/(tabs)' as any);
+      } else {
+        router.replace('/login' as any);
+      }
     }, 3200);
 
     return () => clearTimeout(timer);
