@@ -4,6 +4,8 @@ import cors from "cors";
 import dotenv from "dotenv";
 import authRoutes from "./routes/authRoutes.js";
 import taskRoutes from "./routes/taskRoutes.js";
+import gamificationRoutes from "./routes/gamificationRoutes.js";
+import focusRoutes from "./routes/focusRoutes.js";
 
 dotenv.config();
 
@@ -14,6 +16,8 @@ app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/tasks", taskRoutes);
+app.use("/api/gamification", gamificationRoutes);
+app.use("/api/focus", focusRoutes);
 
 app.get("/", (req, res) => {
   res.json({

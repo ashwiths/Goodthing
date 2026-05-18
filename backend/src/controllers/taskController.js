@@ -1,4 +1,5 @@
 import Task from '../models/Task.js';
+import { updateStreakAndScore, checkAndUnlockAchievements } from '../services/gamificationEngine.js';
 
 // @desc    Create a new task
 // @route   POST /api/tasks
@@ -56,6 +57,9 @@ export const updateTask = async (req, res) => {
       return res.status(401).json({ error: 'Not authorized to update this task' });
     }
 
+    // Capture completion state change
+    const wasCompleted = task.completed;
+
     // 3. Update task fields dynamically
     const fieldsToUpdate = [
       'title',
@@ -74,7 +78,19 @@ export const updateTask = async (req, res) => {
     });
 
     const updatedTask = await task.save();
-    res.status(200).json(updatedTask);
+
+    // Trigger gamification updates if completed changed from false to true
+    let newlyUnlocked = [];
+    if (!wasCompleted && updatedTask.completed) {
+      await updateStreakAndScore(req.user._id, updatedTask);
+      newlyUnlocked = await checkAndUnlockAchievements(req.user._id, updatedTask);
+    }
+
+    // Return task object enriched with newly unlocked achievements
+    const taskObj = updatedTask.toObject();
+    taskObj.newlyUnlocked = newlyUnlocked || [];
+
+    res.status(200).json(taskObj);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

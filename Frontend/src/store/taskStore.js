@@ -3,10 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import API from '../api/api.js';
 import {
   cancelTaskReminder,
+  scheduleTaskReminder,
   scheduleDeleteNotification,
   scheduleCompletionNotification,
-  checkAndManageInactivityAlerts
+  checkAndManageInactivityAlerts,
+  scheduleStreakWarningNotification
 } from '../services/notificationService';
+import { useGamificationStore } from './gamificationStore';
 
 export const useTaskStore = create((set, get) => ({
   tasks: [],
@@ -19,12 +22,27 @@ export const useTaskStore = create((set, get) => ({
     set({ loading: true });
     try {
       const response = await API.get('/tasks');
+      const fetchedTasks = response.data;
+
+      // Automatically schedule repeating reminders for all incomplete tasks on load
+      const tasksWithReminders = await Promise.all(
+        fetchedTasks.map(async (task) => {
+          if (!task.completed) {
+            const notificationId = await scheduleTaskReminder(task);
+            return notificationId ? { ...task, notificationId } : task;
+          }
+          return task;
+        })
+      );
       
       // Update store tasks
-      set({ tasks: response.data, loading: false });
+      set({ tasks: tasksWithReminders, loading: false });
 
       // Manage productivity inactivity reminders based on fetched tasks
-      await checkAndManageInactivityAlerts(response.data);
+      await checkAndManageInactivityAlerts(tasksWithReminders);
+
+      // Synchronize gamification engine statistics on load
+      await useGamificationStore.getState().fetchGamificationStats();
 
       return { success: true };
     } catch (error) {
@@ -40,7 +58,13 @@ export const useTaskStore = create((set, get) => ({
     set({ loading: true });
     try {
       const response = await API.post('/tasks', taskData);
-      const newTask = response.data;
+      let newTask = response.data;
+
+      // Automatically schedule a smart repeating reminder for the newly created task
+      const notificationId = await scheduleTaskReminder(newTask);
+      if (notificationId) {
+        newTask = { ...newTask, notificationId };
+      }
 
       // Immutable prepend to put newest at the top
       set((state) => ({
@@ -50,6 +74,9 @@ export const useTaskStore = create((set, get) => ({
 
       // Re-evaluate smart productivity inactivity reminders
       await checkAndManageInactivityAlerts(get().tasks);
+
+      // Refresh gamification stats (e.g. for pending counts)
+      await useGamificationStore.getState().fetchGamificationStats();
 
       return { success: true, task: newTask };
     } catch (error) {
@@ -65,7 +92,33 @@ export const useTaskStore = create((set, get) => ({
     set({ loading: true });
     try {
       const response = await API.put(`/tasks/${id}`, updatedData);
-      const updatedTask = response.data;
+      let updatedTask = response.data;
+
+      // Cancel reminder + show completion notification if task is now done
+      if (updatedTask.completed) {
+        await cancelTaskReminder(id);
+        await scheduleCompletionNotification(updatedTask.title);
+
+        // Check if any achievements were newly unlocked and trigger global modal
+        if (updatedTask.newlyUnlocked && updatedTask.newlyUnlocked.length > 0) {
+          useGamificationStore.getState().setUnlockedBadgePopup(updatedTask.newlyUnlocked[0]);
+        }
+
+        // Refresh stats
+        await useGamificationStore.getState().fetchGamificationStats();
+
+        // Dynamically schedule/reschedule streak warning reminder based on updated streak count
+        const streakDetails = useGamificationStore.getState().streak;
+        if (streakDetails && streakDetails.currentStreak > 0) {
+          await scheduleStreakWarningNotification(streakDetails.currentStreak);
+        }
+      } else {
+        // Reschedule reminder to update content, intervals, or dates if changed
+        const notificationId = await scheduleTaskReminder(updatedTask);
+        if (notificationId) {
+          updatedTask = { ...updatedTask, notificationId };
+        }
+      }
 
       // Immutable map update
       set((state) => ({
@@ -74,12 +127,6 @@ export const useTaskStore = create((set, get) => ({
         ),
         loading: false,
       }));
-
-      // Cancel reminder + show completion notification if task is now done
-      if (updatedTask.completed) {
-        await cancelTaskReminder(id);
-        await scheduleCompletionNotification(updatedTask.title);
-      }
 
       // Re-evaluate smart productivity inactivity reminders
       await checkAndManageInactivityAlerts(get().tasks);

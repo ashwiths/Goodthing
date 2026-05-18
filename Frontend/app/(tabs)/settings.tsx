@@ -2,14 +2,16 @@
  * app/(tabs)/settings.tsx  ·  To|Do — Premium Control Center
  */
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Alert } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInUp, useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence, Easing } from 'react-native-reanimated';
 import Svg, { Circle, Path } from 'react-native-svg';
+import { router } from 'expo-router';
 import { CinematicBackground } from '../../components/CinematicBackground';
+import { useAuthStore } from '../../src/store/authStore';
 
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAppTheme, ACCENT_COLORS } from '../../hooks/useAppTheme';
@@ -163,6 +165,8 @@ export default function SettingsScreen() {
     hapticsLevel, setHapticsLevel, blurQuality, setBlurQuality, minimalMode, setMinimalMode,
     deepWorkZone, setDeepWorkZone
   } = useSettingsStore();
+
+  const { logout } = useAuthStore();
 
   return (
     <View style={[s.root, { backgroundColor: P.bg }]}>
@@ -324,7 +328,18 @@ export default function SettingsScreen() {
 
         {/* ── Logout Button ── */}
         <Animated.View entering={FadeInUp.delay(900).springify()}>
-          <Pressable style={[s.logoutBtn, { borderColor: P.red + '4D', backgroundColor: P.red + '0D' }]} onPress={() => fireHaptic('heavy')}>
+          <Pressable 
+            style={[s.logoutBtn, { borderColor: P.red + '4D', backgroundColor: P.red + '0D' }]} 
+            onPress={async () => {
+              fireHaptic('heavy');
+              const res = await logout();
+              if (res.success) {
+                router.replace('/login' as any);
+              } else {
+                Alert.alert('Logout Failed ❌', res.message || 'An error occurred during logout.');
+              }
+            }}
+          >
             <BlurView intensity={getBlurIntensity(20)} tint="dark" style={StyleSheet.absoluteFill} />
             <Ionicons name="log-out-outline" size={18} color={P.red} />
             <Text style={[s.logoutTxt, { color: P.red }]}>Disconnect Profile</Text>

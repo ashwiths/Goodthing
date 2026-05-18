@@ -20,6 +20,7 @@ const TABS: TabItem[] = [
   { name: 'index',     label: 'Home',      icon: 'home-outline',      iconActive: 'home'      },
   { name: 'tasks',     label: 'Tasks',     icon: 'list-outline',      iconActive: 'list'      },
   { name: 'calendar',  label: 'Calendar',  icon: 'calendar-outline',  iconActive: 'calendar'  },
+  { name: 'focus',     label: 'Focus',     icon: 'timer-outline',     iconActive: 'timer'     },
   { name: 'analytics', label: 'Stats',     icon: 'bar-chart-outline', iconActive: 'bar-chart' },
   { name: 'settings',  label: 'Settings',  icon: 'settings-outline',  iconActive: 'settings'  },
 ];
@@ -116,6 +117,7 @@ export default function TabLayout() {
       <Tabs.Screen name="index" />
       <Tabs.Screen name="tasks" />
       <Tabs.Screen name="calendar" />
+      <Tabs.Screen name="focus" />
       <Tabs.Screen name="analytics" />
       <Tabs.Screen name="settings" />
     </Tabs>

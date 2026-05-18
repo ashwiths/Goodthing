@@ -19,8 +19,8 @@ export async function registerForPushNotificationsAsync() {
     }
 
     if (finalStatus !== "granted") {
-      alert("Permission for notifications not granted!");
-      return;
+      console.log("[Notifications] Permission not granted.");
+      return null;
     }
 
     if (Constants.expoConfig?.extra?.eas?.projectId) {
@@ -51,9 +51,101 @@ export async function registerForPushNotificationsAsync() {
   return token;
 }
 
+// ─── Exported Request Notification Permission Helper ────────────────────────
+export async function requestNotificationPermission() {
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+
+    if (existingStatus !== "granted") {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    console.log("[Notifications] Permission request response:", finalStatus);
+    return finalStatus === "granted";
+  } catch (error) {
+    console.error("[Notifications] ❌ Request permission failed:", error);
+    return false;
+  }
+}
+
+// ─── Priority Intervals Helper ──────────────────────────────────────────────
+export function getReminderInterval(priority) {
+  const p = String(priority || "low").toLowerCase();
+  if (p === "high") return 1800;    // 30 minutes
+  if (p === "medium") return 3600;  // 1 hour
+  return 7200;                      // 2 hours (default & low)
+}
+
+// ─── Smart Priority Task Reminder Scheduling ───────────────────────────────
+export async function scheduleTaskReminder(task) {
+  if (!task || !task._id) return null;
+  try {
+    const identifier = `reminder-${task._id}`;
+    
+    // Always cancel existing reminder to avoid duplicate schedules
+    await Notifications.cancelScheduledNotificationAsync(identifier).catch(() => {});
+
+    // If task is already completed, do not schedule any reminder
+    if (task.completed) {
+      console.log(`[Notifications] Task "${task.title}" is completed. Skipping reminder schedule.`);
+      return null;
+    }
+
+    const interval = getReminderInterval(task.priority);
+    const dueDateStr = task.dueDate ? ` (Due: ${new Date(task.dueDate).toLocaleDateString()})` : "";
+    const priorityStr = (task.priority || "low").toUpperCase();
+    const bodyStr = `Complete: ${task.title} [Priority: ${priorityStr}]${dueDateStr}`;
+
+    console.log(`[Notifications] Scheduling repeating reminder for task "${task.title}" (Priority: ${priorityStr}) every ${interval}s`);
+
+    await Notifications.scheduleNotificationAsync({
+      identifier,
+      content: {
+        title: "🔔 Task Reminder",
+        body: bodyStr,
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: interval,
+        repeats: true,
+      },
+    });
+
+    console.log(`[Notifications] ✅ Repeating reminder active: "${task.title}" with id: ${identifier}`);
+    return identifier;
+  } catch (error) {
+    console.error(`[Notifications] ❌ scheduleTaskReminder failed for task ${task?._id}:`, error);
+    return null;
+  }
+}
+
+// ─── Cancel a task's repeating reminder ──────────────────────────────────────
+export async function cancelTaskReminder(taskId) {
+  if (!taskId) return;
+  try {
+    const identifier = `reminder-${taskId}`;
+    await Notifications.cancelScheduledNotificationAsync(identifier).catch(() => {});
+    console.log(`[Notifications] ✅ Cancelled reminder for task: ${identifier}`);
+  } catch (error) {
+    console.error("[Notifications] ❌ Cancel failed:", error);
+  }
+}
+
+// ─── Cancel All Task Notifications ───────────────────────────────────────────
+export async function cancelAllTaskNotifications() {
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    console.log("[Notifications] ✅ Cancelled all scheduled notifications.");
+  } catch (error) {
+    console.error("[Notifications] ❌ cancelAllTaskNotifications failed:", error);
+  }
+}
+
 // ─── One-shot local notification ──────────────────────────────────────────────
-// type: 'timeInterval' is REQUIRED by this version of expo-notifications
-export async function scheduleTaskReminder(title, body, seconds = 2) {
+export async function scheduleTaskReminderOneShot(title, body, seconds = 2) {
   try {
     console.log(`[Notifications] One-shot "${title}" in ${seconds}s`);
     await Notifications.scheduleNotificationAsync({
@@ -66,46 +158,6 @@ export async function scheduleTaskReminder(title, body, seconds = 2) {
     console.log(`[Notifications] ✅ One-shot scheduled: "${title}"`);
   } catch (error) {
     console.error("[Notifications] ❌ One-shot failed:", error);
-  }
-}
-
-// ─── Repeating reminder for an incomplete task ────────────────────────────────
-// ⚠️  iOS RULE: repeating timeInterval triggers MUST be >= 60 seconds.
-// Using 60s for testing (change to 3600 for production)
-export async function scheduleRepeatingTaskReminder(taskId, taskTitle, seconds = 60) {
-  try {
-    const identifier = `reminder-${taskId}`;
-    await Notifications.cancelScheduledNotificationAsync(identifier).catch(() => {});
-
-    console.log(`[Notifications] Repeating "${taskTitle}" every ${seconds}s (${identifier})`);
-    await Notifications.scheduleNotificationAsync({
-      identifier,
-      content: {
-        title: "Pending Task Reminder ⏰",
-        body: `You still haven't completed: ${taskTitle}`,
-        sound: true,
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds,       // ✅ must be >= 60 on iOS for repeating triggers
-        repeats: true,
-      },
-    });
-    console.log(`[Notifications] ✅ Repeating reminder active: "${taskTitle}"`);
-    return identifier;
-  } catch (error) {
-    console.error("[Notifications] ❌ Repeating reminder failed:", error);
-  }
-}
-
-// ─── Cancel a task's repeating reminder ──────────────────────────────────────
-export async function cancelTaskReminder(taskId) {
-  try {
-    const identifier = `reminder-${taskId}`;
-    await Notifications.cancelScheduledNotificationAsync(identifier);
-    console.log(`[Notifications] ✅ Cancelled: ${identifier}`);
-  } catch (error) {
-    console.error("[Notifications] ❌ Cancel failed:", error);
   }
 }
 
@@ -181,10 +233,48 @@ export async function checkAndManageInactivityAlerts(tasks) {
     if (incompleteCount > 0) {
       await scheduleInactivityReminder();
     } else {
-      await Notifications.cancelScheduledNotificationAsync("productivity-inactivity-reminder");
+      await Notifications.cancelScheduledNotificationAsync("productivity-inactivity-reminder").catch(() => {});
       console.log("[Notifications] ✅ Inactivity reminder cancelled (all done).");
     }
   } catch (error) {
     console.error("[Notifications] ❌ Inactivity lifecycle failed:", error);
+  }
+}
+
+// ─── Streak warning alerts ──────────────────────────────────────────────
+export async function scheduleStreakWarningNotification(currentStreak) {
+  if (!currentStreak || currentStreak <= 0) return;
+  try {
+    const identifier = "streak-warning-reminder";
+    
+    // Always cancel existing warning first
+    await Notifications.cancelScheduledNotificationAsync(identifier).catch(() => {});
+
+    console.log(`[Notifications] Scheduling streak warning (current streak: ${currentStreak}) in 20 hours (72000s)...`);
+    
+    await Notifications.scheduleNotificationAsync({
+      identifier,
+      content: {
+        title: "🔥 Streak in Danger! 🔥",
+        body: `Don't lose your ${currentStreak}-day completion streak! Complete a task now to keep the fire burning!`,
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 72000, // 20 hours (gives 4 hours window to complete a task before day boundary resets it)
+      },
+    });
+    console.log("[Notifications] ✅ Streak warning scheduled.");
+  } catch (error) {
+    console.error("[Notifications] ❌ Streak warning scheduling failed:", error);
+  }
+}
+
+export async function cancelStreakWarningNotification() {
+  try {
+    await Notifications.cancelScheduledNotificationAsync("streak-warning-reminder").catch(() => {});
+    console.log("[Notifications] ✅ Streak warning cancelled.");
+  } catch (error) {
+    console.error("[Notifications] ❌ cancelStreakWarningNotification failed:", error);
   }
 }

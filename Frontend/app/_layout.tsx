@@ -9,6 +9,7 @@ import * as Notifications from 'expo-notifications';
 import { C } from '../constants/colors';
 import { registerForPushNotificationsAsync } from '../src/services/notificationService';
 import { useAuthStore } from '../src/store/authStore';
+import { AchievementModal } from '../components/AchievementModal';
 
 if (Platform.OS === 'web') {
   try {
@@ -60,6 +61,7 @@ export default function RootLayout() {
         <Stack.Screen name="character-select" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
       </Stack>
+      <AchievementModal />
     </GestureHandlerRootView>
   );
 }

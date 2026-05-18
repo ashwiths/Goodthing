@@ -22,6 +22,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { AnimatedLogo } from './AnimatedLogo';
 import { C } from '../constants/colors';
 import { useAuthStore } from '../src/store/authStore';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+// @ts-ignore
+import { useGoogleAuth } from '../src/services/googleAuth';
 
 // ── Glow Input ────────────────────────────────────────────────────────────────
 interface GlowInputProps {
@@ -115,6 +119,54 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
   const [password, setPassword] = useState('');
 
   const { login, signup, loading } = useAuthStore();
+
+  const { handleGoogleSignIn } = useGoogleAuth();
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    try {
+      const user = await handleGoogleSignIn();
+
+      if (user) {
+        console.log('✅ FIREBASE GOOGLE LOGIN SUCCESS');
+        console.log(user);
+
+        // Map Firebase user object to application's local user interface
+        const localUser = {
+          name: user.displayName || user.email?.split('@')[0] || 'User',
+          email: user.email,
+          photoURL: user.photoURL,
+        };
+
+        // Persist session to AsyncStorage
+        await AsyncStorage.setItem('token', 'firebase-google-auth-token');
+        await AsyncStorage.setItem('user', JSON.stringify(localUser));
+
+        // Update Zustand global store state
+        useAuthStore.setState({
+          token: 'firebase-google-auth-token',
+          user: localUser,
+        });
+
+        Alert.alert(
+          'Google Sign-In Success! 🎉',
+          `Welcome, ${localUser.name}!\n\nEmail: ${localUser.email}`
+        );
+
+        // Redirect to Home Tabs screen
+        router.replace('/(tabs)');
+      }
+    } catch (err: any) {
+      console.error('🔥 GOOGLE LOGIN ERROR:', err);
+      Alert.alert(
+        'Sign-In Failed ❌',
+        err.message || 'An error occurred during Google authentication.'
+      );
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   // Card slide-up
   const cardOp = useSharedValue(0);
@@ -261,12 +313,18 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
           <View style={styles.divLine} />
         </View>
 
-        {/* Guest */}
-        <ScaleBtn onPress={handleGuest} delay={BASE + 260}>
-          <View style={styles.guestBtn}>
-            <Text style={styles.guestText}>Continue as Guest</Text>
+        {/* Continue with Google */}
+        <ScaleBtn onPress={() => {}} delay={BASE + 220} disabled={true}>
+          <View style={[styles.googleBtn, { opacity: 0.5 }]}>
+            <Ionicons name="logo-google" size={18} color={C.white} />
+            <Text style={styles.googleText}>Continue with Google</Text>
+            <View style={styles.comingSoonBadge}>
+              <Text style={styles.comingSoonText}>COMING SOON</Text>
+            </View>
           </View>
         </ScaleBtn>
+
+
 
         <View style={{ height: 20 }} />
 
@@ -394,6 +452,43 @@ const styles = StyleSheet.create({
     color:       C.text70,
     fontSize:    15,
     fontWeight:  '500',
+  },
+  googleBtn: {
+    height:          52,
+    borderRadius:    14,
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    borderWidth:     1,
+    borderColor:     'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    shadowColor:     C.blue400,
+    shadowOffset:    { width: 0, height: 6 },
+    shadowOpacity:   0.25,
+    shadowRadius:    15,
+    elevation:       5,
+    gap:             10,
+  },
+  googleText: {
+    color:       C.white,
+    fontSize:    15,
+    fontWeight:  '600',
+    letterSpacing: 0.2,
+  },
+  comingSoonBadge: {
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    borderColor:     'rgba(59, 130, 246, 0.3)',
+    borderWidth:     1,
+    borderRadius:    6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft:      4,
+  },
+  comingSoonText: {
+    fontSize:      9,
+    fontWeight:    '700',
+    color:         C.blue400,
+    letterSpacing: 0.5,
   },
   toggleModeRow: {
     alignSelf: 'center',

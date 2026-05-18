@@ -20,7 +20,7 @@ import { CinematicBackground } from '../components/CinematicBackground';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { fireHaptic, fireSuccessHaptic } from '../utils/haptics';
 import { useTaskStore } from '../src/store/taskStore';
-import { scheduleTaskReminder, scheduleRepeatingTaskReminder } from '../src/services/notificationService';
+import { scheduleTaskReminderOneShot } from '../src/services/notificationService';
 
 const CATEGORIES = ['Study', 'Health', 'Personal', 'Work', 'Focus'];
 const PRIORITIES = ['Low', 'Medium', 'High'] as const;
@@ -238,11 +238,8 @@ export default function AddTaskScreen() {
     const res = await createTask(taskData);
     if (res.success) {
       if (reminder) {
-        // iOS requires repeating timeInterval >= 60s. Using 60s for testing, 3600 for production.
-        await scheduleRepeatingTaskReminder(res.task._id, title.trim(), 60);
-        
         // Trigger an instant notification immediately to confirm everything is working!
-        await scheduleTaskReminder(
+        await scheduleTaskReminderOneShot(
           "Task Created 🚀",
           `Smart reminder is active for: ${title.trim()}`,
           1

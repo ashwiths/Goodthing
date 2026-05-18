@@ -2,23 +2,33 @@
   "expo": {
     "name": "ZenForge",
     "slug": "zenforge",
+    "owner": "ash1528",
+    "scheme": "zenforge",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "zenforge",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.zenforge.app"
+      "bundleIdentifier": "com.zenforge.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.zenforge.app",
+      "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
         "backgroundColor": "#0A0A0F",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
-      "edgeToEdgeEnabled": true,
-      "package": "com.zenforge.app"
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -29,6 +39,7 @@
       "expo-router",
       "expo-av",
       "expo-local-authentication",
+      "expo-web-browser",
       [
         "expo-splash-screen",
         {
@@ -45,6 +56,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1cb937bf-ab05-4461-93fd-4ffece19c790"
+      }
     }
   }
 }
