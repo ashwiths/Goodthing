@@ -61,6 +61,15 @@ app.get("/", (req, res) => {
   });
 });
 
+app.get("/api", (req, res) => {
+  res.status(200).json({
+    success: true,
+    status: "online",
+    message: "ZenForge Backend Running 🚀",
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // ─── Bind Rate Limiters ───
 app.use("/api", globalLimiter);
 app.use("/api/auth", authLimiter);
