@@ -73,22 +73,36 @@ export const useAuthStore = create((set, get) => ({
       const token = await secureStorage.getItem('token');
       const userJSON = await secureStorage.getItem('user');
 
-      if (token && userJSON) {
-        const user = JSON.parse(userJSON);
-        
-        // Ensure all standardized properties exist
-        const mappedUser = {
-          uid: user.uid || user._id || '',
-          fullName: user.fullName || user.name || 'Productivity Warrior',
-          email: user.email || '',
-          avatar: user.avatar || user.photoURL || '',
-          provider: user.provider || 'email',
-        };
-        
-        set({ token, user: mappedUser, loading: false });
-        return { success: true };
+      const isValidToken = token && token !== 'null' && token !== 'undefined' && token.trim() !== '';
+      const isValidUser = userJSON && userJSON !== 'null' && userJSON !== 'undefined' && userJSON.trim() !== '';
+
+      if (isValidToken && isValidUser) {
+        try {
+          const user = JSON.parse(userJSON);
+          
+          // Ensure all standardized properties exist
+          const mappedUser = {
+            uid: user.uid || user._id || '',
+            fullName: user.fullName || user.name || 'Productivity Warrior',
+            email: user.email || '',
+            avatar: user.avatar || user.photoURL || '',
+            provider: user.provider || 'email',
+          };
+          
+          set({ token, user: mappedUser, loading: false });
+          return { success: true };
+        } catch (parseErr) {
+          console.warn('[loadUser] Failed to parse cached user payload, clearing session.');
+          await get().logout();
+          return { success: false };
+        }
       } else {
-        set({ loading: false });
+        // If storage is corrupted or has placeholder string tokens, purge them
+        if (token || userJSON) {
+          await get().logout();
+        } else {
+          set({ loading: false });
+        }
         return { success: false };
       }
     } catch (error) {

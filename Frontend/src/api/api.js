@@ -17,7 +17,7 @@ API.interceptors.request.use(
   async (config) => {
     // Safely fetch token from native hardware keychain/SecureStore
     const token = await secureStorage.getItem('token');
-    if (token) {
+    if (token && token !== 'null' && token !== 'undefined' && token.trim() !== '') {
       config.headers.Authorization = `Bearer ${token}`;
     }
     // Automatically attach timezone offset to make backend streak dates robust
