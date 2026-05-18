@@ -29,4 +29,25 @@ API.interceptors.request.use(
   }
 );
 
+// Response Interceptor to gracefully handle authentication/session failures (e.g. 401 Unauthorized)
+API.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response && error.response.status === 401) {
+      console.warn('🔒 [Session Expired/Unauthorized]: Clearing credentials and logging out.');
+      await secureStorage.removeItem('token');
+      await secureStorage.removeItem('user');
+      
+      try {
+        // Dynamic require to prevent circular module dependency with authStore
+        const { useAuthStore } = require('../store/authStore');
+        useAuthStore.getState().logout();
+      } catch (e) {
+        console.warn('Could not trigger authStore logout dynamically:', e);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default API;
