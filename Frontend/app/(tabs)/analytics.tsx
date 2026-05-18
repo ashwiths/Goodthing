@@ -97,7 +97,8 @@ function SmoothScoreChart({ logs }: { logs: any[] }) {
   const range = maxScore - minScore;
 
   const points = logs.map((log, index) => {
-    const x = (index / (logs.length - 1)) * 100;
+    const divisor = logs.length - 1 || 1;
+    const x = (index / divisor) * 100;
     const y = 80 - ((log.score - minScore) / range) * 60; // scale between 20 and 80
     return { x, y };
   });
