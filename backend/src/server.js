@@ -54,6 +54,13 @@ app.use(express.json());
 // ─── Shield Requests against NoSQL Query Injections ───
 app.use(sanitizeRequest);
 
+// ─── Healthcheck Root Route (Does not require DB connection) ───
+app.get("/", (req, res) => {
+  res.json({
+    message: "To|Do Backend Running 🚀",
+  });
+});
+
 // ─── Bind Rate Limiters ───
 app.use("/api", globalLimiter);
 app.use("/api/auth", authLimiter);
@@ -65,12 +72,6 @@ app.use("/api/auth", authRoutes);
 app.use("/api/tasks", taskRoutes);
 app.use("/api/gamification", gamificationRoutes);
 app.use("/api/focus", focusRoutes);
-
-app.get("/", (req, res) => {
-  res.json({
-    message: "To|Do Backend Running 🚀",
-  });
-});
 
 // ─── Express Global Crash Shield Middleware ───
 app.use((err, req, res, next) => {
