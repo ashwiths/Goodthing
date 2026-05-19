@@ -21,7 +21,10 @@ import { useAppTheme } from '../../hooks/useAppTheme';
 import { fireHaptic, fireSuccessHaptic } from '../../utils/haptics';
 import { useTaskStore } from '../../src/store/taskStore';
 import { useAuthStore } from '../../src/store/authStore';
+import { useAnalyticsStore } from '../../src/store/analyticsStore';
+import { useFocusStore } from '../../src/store/focusStore';
 import { ActivityIndicator } from 'react-native';
+
 
 const { width: W } = Dimensions.get('window');
 
@@ -87,26 +90,77 @@ function GlowBtn({ onPress }: { onPress: () => void }) {
   );
 }
 
+function AnimatedCounter({ value, suffix = '', style, isFloat = false }: {
+  value: number; suffix?: string; style: any; isFloat?: boolean;
+}) {
+  const [displayVal, setDisplayVal] = useState(0);
+  const sharedVal = useSharedValue(0);
+
+  useEffect(() => {
+    sharedVal.value = withTiming(value, {
+      duration: 800,
+      easing: Easing.out(Easing.quad)
+    });
+  }, [value]);
+
+  useEffect(() => {
+    let active = true;
+    const update = () => {
+      if (!active) return;
+      setDisplayVal(sharedVal.value);
+      requestAnimationFrame(update);
+    };
+    update();
+    return () => {
+      active = false;
+    };
+  }, [sharedVal]);
+
+  const formatted = isFloat 
+    ? displayVal.toFixed(1)
+    : Math.round(displayVal).toString();
+
+  return <Text style={style}>{formatted}{suffix}</Text>;
+}
+
+function AnimatedBar({ value, color }: { value: number; color: string }) {
+  const heightVal = useSharedValue(4);
+
+  useEffect(() => {
+    const h = (value / 100) * 26;
+    heightVal.value = withTiming(Math.max(4, h), { duration: 600, easing: Easing.out(Easing.quad) });
+  }, [value]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    height: heightVal.value,
+  }));
+
+  const h = value / 100;
+
+  return (
+    <Animated.View style={[{
+      width: 5,
+      borderRadius: 3,
+      backgroundColor: color,
+      opacity: 0.3 + h * 0.65,
+    }, animStyle]} />
+  );
+}
+
 // ─── Mini bar chart ───────────────────────────────────────────────────────────
 function Bars({ data, color }: { data: number[]; color: string }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 26, marginLeft: 10, marginTop: 10 }}>
-      {data.map((val, i) => {
-        const h = val / 100;
-        return (
-          <View key={i} style={{
-            width: 5, height: Math.max(4, 26 * h), borderRadius: 3,
-            backgroundColor: color, opacity: 0.3 + h * 0.65,
-          }} />
-        );
-      })}
+      {data.map((val, i) => (
+        <AnimatedBar key={i} value={val} color={color} />
+      ))}
     </View>
   );
 }
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
-function StatCard({ label, value, color, chart }: {
-  label: string; value: string; color: string; chart: number[];
+function StatCard({ label, value, subValue, color, chart, isFloat = false }: {
+  label: string; value: number; subValue?: string; color: string; chart: number[]; isFloat?: boolean;
 }) {
   const { P, getBlurIntensity } = useAppTheme();
   const sc = React.useMemo(() => StyleSheet.create({
@@ -119,6 +173,7 @@ function StatCard({ label, value, color, chart }: {
     glow:    { position: 'absolute', top: -24, right: -24, width: 72, height: 72, borderRadius: 36, opacity: 0.12 },
     label:   { fontSize: 10, color: P.dimmer, fontWeight: '600', letterSpacing: 0.8, marginLeft: 10 },
     val:     { fontSize: 30, fontWeight: '800', marginLeft: 10, marginTop: 4, letterSpacing: -1 },
+    subVal:  { fontSize: 11, color: P.dim, fontWeight: '600', marginLeft: 10, marginTop: 2 }
   }), [P]);
 
   return (
@@ -127,7 +182,8 @@ function StatCard({ label, value, color, chart }: {
       <View style={[sc.topLine, { backgroundColor: color }]} />
       <View style={[sc.glow, { backgroundColor: color }]} />
       <Text style={sc.label}>{label}</Text>
-      <Text style={[sc.val, { color }]}>{value}</Text>
+      <AnimatedCounter value={value} suffix={isFloat ? 'h' : '%'} style={[sc.val, { color }]} isFloat={isFloat} />
+      {subValue ? <Text style={sc.subVal}>{subValue}</Text> : null}
       <View style={{ flexGrow: 1 }} />
       <Bars data={chart} color={color} />
     </View>
@@ -263,6 +319,51 @@ export default function HomeScreen() {
   const { tasks, fetchTasks, loading, updateTask, deleteTask } = useTaskStore();
   const { user } = useAuthStore();
 
+  const {
+    productivityPercentage,
+    totalFocusHours,
+    todayFocusMinutes,
+    weeklyProductivityTrend,
+    weeklyFocusTrend,
+    fetchProgressAnalytics
+  } = useAnalyticsStore();
+
+  const { restoreSession } = useFocusStore();
+
+  const productivityVal = useSharedValue(0);
+
+  useEffect(() => {
+    productivityVal.value = withTiming(productivityPercentage, {
+      duration: 800,
+      easing: Easing.out(Easing.quad)
+    });
+  }, [productivityPercentage]);
+
+  const animProgressStyle = useAnimatedStyle(() => ({
+    width: `${productivityVal.value}%`,
+  }));
+
+  const glowOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (productivityPercentage === 100) {
+      glowOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0.6, { duration: 1000 }),
+          withTiming(0.2, { duration: 1000 })
+        ),
+        -1,
+        true
+      );
+    } else {
+      glowOpacity.value = withTiming(0);
+    }
+  }, [productivityPercentage]);
+
+  const animGlowStyle = useAnimatedStyle(() => ({
+    opacity: glowOpacity.value,
+  }));
+
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour >= 5 && hour < 12) return 'Good morning';
@@ -273,6 +374,8 @@ export default function HomeScreen() {
 
   useEffect(() => {
     fetchTasks();
+    fetchProgressAnalytics();
+    restoreSession();
   }, [fetchTasks]);
 
   const s = React.useMemo(() => StyleSheet.create({
@@ -564,9 +667,21 @@ export default function HomeScreen() {
         <FadeUp delay={270}>
           {!minimalMode && (
             <View style={s.statsRow}>
-              <StatCard label="PRODUCTIVITY" value="82%" color={P.blue} chart={[40, 60, 50, 80, 100, 70, 90]} />
+              <StatCard
+                label="PRODUCTIVITY"
+                value={productivityPercentage}
+                color={P.blue}
+                chart={weeklyProductivityTrend}
+              />
               <View style={{ width: 14 }} />
-              <StatCard label="FOCUS TIME" value="4h" color={P.purple} chart={[20, 30, 40, 35, 60, 45, 55]} />
+              <StatCard
+                label="FOCUS TIME"
+                value={totalFocusHours}
+                subValue={`Today: ${todayFocusMinutes}m`}
+                color={P.purple}
+                chart={weeklyFocusTrend}
+                isFloat={true}
+              />
             </View>
           )}
         </FadeUp>
@@ -575,16 +690,35 @@ export default function HomeScreen() {
         <FadeUp delay={310}>
           <View style={s.progressCard}>
             <BlurView intensity={getBlurIntensity(22)} tint="dark" style={StyleSheet.absoluteFill} />
+            
+            {productivityPercentage === 100 && (
+              <Animated.View style={[
+                StyleSheet.absoluteFill,
+                {
+                  borderRadius: 16,
+                  borderWidth: 1.5,
+                  borderColor: P.blue,
+                  shadowColor: P.blue,
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.8,
+                  shadowRadius: 10,
+                },
+                animGlowStyle
+              ]} pointerEvents="none" />
+            )}
+
             <View style={{ flex: 1, justifyContent: 'center' }}>
               <View style={s.progressTrack}>
-                <LinearGradient
-                  colors={[P.blue2, P.blue]}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                  style={[s.progressFill, { width: `${pct}%` as any }]}
-                />
+                <Animated.View style={[{ height: '100%' }, animProgressStyle]}>
+                  <LinearGradient
+                    colors={[P.blue2, P.blue]}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                </Animated.View>
               </View>
             </View>
-            <Text style={s.progressPct}>{pct}%</Text>
+            <AnimatedCounter value={productivityPercentage} suffix="%" style={s.progressPct} />
           </View>
         </FadeUp>
 

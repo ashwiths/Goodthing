@@ -91,7 +91,7 @@ export const endFocus = async (req, res) => {
 
     // Call centralized recalculation to sync everything!
     const offset = parseInt(req.headers['x-timezone-offset'] || '0', 10);
-    const { stats: userStats } = await recalculateUserStats(userId, offset);
+    const { stats: userStats, newlyUnlocked } = await recalculateUserStats(userId, offset);
 
     // Sync to FocusStats (streaks/hours) - backwards compatibility
     let stats = await FocusStats.findOne({ user: userId });
@@ -107,7 +107,8 @@ export const endFocus = async (req, res) => {
     return res.status(200).json({
       success: true,
       session,
-      userStats
+      userStats,
+      newlyUnlocked: newlyUnlocked.map(a => a.id)
     });
   } catch (error) {
     console.error('[Focus Controller] End Focus Error:', error);

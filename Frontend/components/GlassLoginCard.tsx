@@ -5,7 +5,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, TextInput, Pressable, StyleSheet, Alert,
+  View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import Animated, {
@@ -26,6 +26,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { secureStorage } from '../src/utils/secureStorage.js';
 // @ts-ignore
 import { useGoogleAuth } from '../src/services/googleAuth';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '../src/config/firebase';
+import { fireHaptic, fireSuccessHaptic } from '../utils/haptics';
 
 // ── Glow Input ────────────────────────────────────────────────────────────────
 interface GlowInputProps {
@@ -118,7 +121,79 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
 
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotSuccess, setForgotSuccess] = useState(false);
+  const [forgotError, setForgotError] = useState('');
+  const [cooldown, setCooldown] = useState(0);
+
   const { login, signup, loading } = useAuthStore();
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (cooldown > 0) {
+      interval = setInterval(() => {
+        setCooldown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [cooldown]);
+
+  const handleForgotPassword = async () => {
+    if (forgotLoading || cooldown > 0) return;
+
+    const trimmedEmail = forgotEmail.trim();
+    if (!trimmedEmail) {
+      setForgotError('Please enter your email address.');
+      fireHaptic('medium');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setForgotError('Please enter a valid email address.');
+      fireHaptic('medium');
+      return;
+    }
+
+    setForgotLoading(true);
+    setForgotError('');
+    setForgotSuccess(false);
+    fireHaptic('light');
+
+    try {
+      await sendPasswordResetEmail(auth, trimmedEmail);
+      setForgotSuccess(true);
+      fireSuccessHaptic();
+      setCooldown(30);
+    } catch (err: any) {
+      console.warn('🔥 Firebase Forgot Password Error:', err.code, err.message);
+      fireHaptic('heavy');
+      
+      switch (err.code) {
+        case 'auth/user-not-found':
+          setForgotError('No account found with this email.');
+          break;
+        case 'auth/invalid-email':
+          setForgotError('Please enter a valid email address.');
+          break;
+        case 'auth/too-many-requests':
+          setForgotError('Too many requests. Please wait a moment.');
+          break;
+        case 'auth/network-request-failed':
+          setForgotError('Network connection error. Check your internet.');
+          break;
+        default:
+          setForgotError(err.message || 'An error occurred. Please try again.');
+          break;
+      }
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   const { handleGoogleSignIn } = useGoogleAuth();
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -246,104 +321,186 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
           <AnimatedLogo size="small" showSlogan={false} animated={false} />
         </View>
 
-        {/* Heading */}
-        <Text style={styles.heading}>{isSignup ? 'Create Account' : 'Welcome Back'}</Text>
-        <Text style={styles.subtitle}>
-          {isSignup ? 'Start your productivity journey with To|Do.' : 'Continue your productivity journey.'}
-        </Text>
-
-        <View style={{ height: 24 }} />
-
-        {/* Inputs */}
-        {isSignup && (
+        {isForgotPassword ? (
           <>
+            {/* Heading */}
+            <Text style={styles.heading}>Reset Password</Text>
+            <Text style={styles.subtitle}>
+              Enter your email to receive password reset instructions.
+            </Text>
+
+            <View style={{ height: 24 }} />
+
             <GlowInput
-              value={name}
-              onChangeText={setName}
-              placeholder="Full name"
-              delay={BASE - 40}
+              value={forgotEmail}
+              onChangeText={(txt) => {
+                setForgotEmail(txt);
+                setForgotError('');
+              }}
+              placeholder="Email address"
+              keyboardType="email-address"
+              delay={100}
+            />
+
+            {forgotError ? (
+              <View style={styles.errorContainer}>
+                <Ionicons name="alert-circle-outline" size={16} color="#FF6B6B" />
+                <Text style={styles.errorText}>{forgotError}</Text>
+              </View>
+            ) : null}
+
+            {forgotSuccess ? (
+              <View style={styles.successContainer}>
+                <Ionicons name="checkmark-circle-outline" size={16} color="#4ECDC4" />
+                <Text style={styles.successText}>Password reset link sent successfully 📩</Text>
+              </View>
+            ) : null}
+
+            <View style={{ height: 22 }} />
+
+            {/* Action Button */}
+            <ScaleBtn onPress={handleForgotPassword} delay={180} disabled={forgotLoading || cooldown > 0}>
+              <LinearGradient
+                colors={forgotLoading || cooldown > 0 ? ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.05)'] : [C.blue500, C.blue700]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[styles.loginBtn, (forgotLoading || cooldown > 0) && { opacity: 0.6 }]}
+              >
+                {forgotLoading ? (
+                  <ActivityIndicator color={C.white} size="small" />
+                ) : (
+                  <Text style={styles.loginBtnText}>
+                    {cooldown > 0 ? `Resend in ${cooldown}s` : 'Send Reset Link'}
+                  </Text>
+                )}
+              </LinearGradient>
+            </ScaleBtn>
+
+            <View style={{ height: 20 }} />
+
+            {/* Toggle Mode Link */}
+            <Pressable 
+              style={styles.toggleModeRow} 
+              onPress={() => {
+                fireHaptic('light');
+                setIsForgotPassword(false);
+                setForgotEmail('');
+                setForgotError('');
+                setForgotSuccess(false);
+              }}
+            >
+              <Text style={styles.toggleModeText}>Back to Login</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            {/* Heading */}
+            <Text style={styles.heading}>{isSignup ? 'Create Account' : 'Welcome Back'}</Text>
+            <Text style={styles.subtitle}>
+              {isSignup ? 'Start your productivity journey with To|Do.' : 'Continue your productivity journey.'}
+            </Text>
+
+            <View style={{ height: 24 }} />
+
+            {/* Inputs */}
+            {isSignup && (
+              <>
+                <GlowInput
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="Full name"
+                  delay={BASE - 40}
+                />
+                <View style={{ height: 12 }} />
+              </>
+            )}
+
+            <GlowInput
+              value={email}
+              onChangeText={setEmail}
+              placeholder="Email address"
+              keyboardType="email-address"
+              delay={BASE}
             />
             <View style={{ height: 12 }} />
+            <GlowInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Password"
+              secure
+              delay={BASE + 80}
+            />
+
+            {/* Forgot */}
+            {!isSignup && (
+              <Pressable
+                style={styles.forgotRow}
+                onPress={() => {
+                  fireHaptic('light');
+                  setIsForgotPassword(true);
+                  setForgotEmail('');
+                  setForgotError('');
+                  setForgotSuccess(false);
+                }}
+              >
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </Pressable>
+            )}
+
+            <View style={{ height: 22 }} />
+
+            {/* Action Button */}
+            <ScaleBtn onPress={isSignup ? handleSignup : handleLogin} delay={BASE + 180} disabled={loading}>
+              <LinearGradient
+                colors={[C.blue500, C.blue700]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[styles.loginBtn, loading && { opacity: 0.6 }]}
+              >
+                <Text style={styles.loginBtnText}>
+                  {isSignup 
+                    ? (loading ? 'Creating Account...' : 'Create Account') 
+                    : (loading ? 'Signing In...' : 'Sign In')}
+                </Text>
+              </LinearGradient>
+            </ScaleBtn>
+
+            {/* Divider */}
+            <View style={styles.divRow}>
+              <View style={styles.divLine} />
+              <Text style={styles.divLabel}>or</Text>
+              <View style={styles.divLine} />
+            </View>
+
+            {/* Continue with Google */}
+            <ScaleBtn onPress={() => {}} delay={BASE + 220} disabled={true}>
+              <View style={[styles.googleBtn, { opacity: 0.5 }]}>
+                <Ionicons name="logo-google" size={18} color={C.white} />
+                <Text style={styles.googleText}>Continue with Google</Text>
+                <View style={styles.comingSoonBadge}>
+                  <Text style={styles.comingSoonText}>COMING SOON</Text>
+                </View>
+              </View>
+            </ScaleBtn>
+
+            <View style={{ height: 20 }} />
+
+            {/* Toggle Mode Link */}
+            <Pressable 
+              style={styles.toggleModeRow} 
+              onPress={() => {
+                setIsSignup(!isSignup);
+                setName('');
+                setEmail('');
+                setPassword('');
+              }}
+            >
+              <Text style={styles.toggleModeText}>
+                {isSignup ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+              </Text>
+            </Pressable>
           </>
         )}
-
-        <GlowInput
-          value={email}
-          onChangeText={setEmail}
-          placeholder="Email address"
-          keyboardType="email-address"
-          delay={BASE}
-        />
-        <View style={{ height: 12 }} />
-        <GlowInput
-          value={password}
-          onChangeText={setPassword}
-          placeholder="Password"
-          secure
-          delay={BASE + 80}
-        />
-
-        {/* Forgot */}
-        {!isSignup && (
-          <Pressable style={styles.forgotRow} onPress={() => Alert.alert('Reset Password', 'Password reset instructions sent!')}>
-            <Text style={styles.forgotText}>Forgot password?</Text>
-          </Pressable>
-        )}
-
-        <View style={{ height: 22 }} />
-
-        {/* Action Button */}
-        <ScaleBtn onPress={isSignup ? handleSignup : handleLogin} delay={BASE + 180} disabled={loading}>
-          <LinearGradient
-            colors={[C.blue500, C.blue700]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.loginBtn, loading && { opacity: 0.6 }]}
-          >
-            <Text style={styles.loginBtnText}>
-              {isSignup 
-                ? (loading ? 'Creating Account...' : 'Create Account') 
-                : (loading ? 'Signing In...' : 'Sign In')}
-            </Text>
-          </LinearGradient>
-        </ScaleBtn>
-
-        {/* Divider */}
-        <View style={styles.divRow}>
-          <View style={styles.divLine} />
-          <Text style={styles.divLabel}>or</Text>
-          <View style={styles.divLine} />
-        </View>
-
-        {/* Continue with Google */}
-        <ScaleBtn onPress={() => {}} delay={BASE + 220} disabled={true}>
-          <View style={[styles.googleBtn, { opacity: 0.5 }]}>
-            <Ionicons name="logo-google" size={18} color={C.white} />
-            <Text style={styles.googleText}>Continue with Google</Text>
-            <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoonText}>COMING SOON</Text>
-            </View>
-          </View>
-        </ScaleBtn>
-
-
-
-        <View style={{ height: 20 }} />
-
-        {/* Toggle Mode Link */}
-        <Pressable 
-          style={styles.toggleModeRow} 
-          onPress={() => {
-            setIsSignup(!isSignup);
-            setName('');
-            setEmail('');
-            setPassword('');
-          }}
-        >
-          <Text style={styles.toggleModeText}>
-            {isSignup ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-          </Text>
-        </Pressable>
       </View>
     </Animated.View>
   );
@@ -502,5 +659,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     letterSpacing: 0.2,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 107, 107, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.18)',
+  },
+  errorText: {
+    color: '#FF6B6B',
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  successContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(78, 205, 196, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(78, 205, 196, 0.18)',
+  },
+  successText: {
+    color: '#4ECDC4',
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
   },
 });

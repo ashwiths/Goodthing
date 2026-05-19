@@ -4,7 +4,33 @@ import { Audio } from 'expo-av';
 import API from '../api/api.js';
 import { useGamificationStore } from './gamificationStore';
 import { useAmbientSoundStore } from './ambientSoundStore';
+import { useAnalyticsStore } from './analyticsStore';
 import { fireSuccessHaptic, fireHaptic } from '../../utils/haptics';
+
+const saveTimerState = async (state) => {
+  try {
+    const data = {
+      duration: state.duration,
+      isActive: state.isActive,
+      isPaused: state.isPaused,
+      sessionId: state.sessionId,
+      sessionStartTime: state.sessionStartTime ? (typeof state.sessionStartTime === 'object' ? state.sessionStartTime.toISOString() : state.sessionStartTime) : null,
+      musicType: state.musicType,
+      ambientStats: state.ambientStats,
+    };
+    await AsyncStorage.setItem('@zenforge_timer_state', JSON.stringify(data));
+  } catch (error) {
+    console.warn('[Focus Store] Failed to save timer state:', error.message);
+  }
+};
+
+const clearTimerState = async () => {
+  try {
+    await AsyncStorage.removeItem('@zenforge_timer_state');
+  } catch (error) {
+    console.warn('[Focus Store] Failed to clear timer state:', error.message);
+  }
+};
 
 const AUDIO_MAP = {
   lofi: require('../../assets/audio/piano.mp3'),
@@ -77,6 +103,61 @@ export const useFocusStore = create((set, get) => ({
     }
   },
 
+  restoreSession: async () => {
+    try {
+      const saved = await AsyncStorage.getItem('@zenforge_timer_state');
+      if (saved) {
+        const state = JSON.parse(saved);
+        if (state.isActive) {
+          if (state.isPaused) {
+            set({
+              duration: state.duration,
+              timeRemaining: state.timeRemaining,
+              isActive: true,
+              isPaused: true,
+              sessionId: state.sessionId,
+              sessionStartTime: state.sessionStartTime,
+              musicType: state.musicType || 'lofi',
+              ambientStats: state.ambientStats || {},
+            });
+          } else {
+            const elapsedSeconds = Math.floor((Date.now() - new Date(state.sessionStartTime).getTime()) / 1000);
+            const remaining = state.duration - elapsedSeconds;
+
+            if (remaining <= 0) {
+              // Completed in background!
+              set({
+                duration: state.duration,
+                timeRemaining: 0,
+                isActive: false,
+                isPaused: false,
+                sessionId: state.sessionId,
+                sessionStartTime: state.sessionStartTime,
+                musicType: state.musicType || 'lofi',
+                ambientStats: state.ambientStats || {},
+              });
+              // Send completion details
+              await get().completeSession(true);
+            } else {
+              set({
+                duration: state.duration,
+                timeRemaining: remaining,
+                isActive: true,
+                isPaused: false,
+                sessionId: state.sessionId,
+                sessionStartTime: state.sessionStartTime,
+                musicType: state.musicType || 'lofi',
+                ambientStats: state.ambientStats || {},
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Focus Store] Failed to restore session:', e.message);
+    }
+  },
+
   // ─── TIMER CONTROLS ─────────────────────────────────────────────────────────
   setTimerMode: (mode, customSeconds = 1500) => {
     fireHaptic('light');
@@ -95,7 +176,7 @@ export const useFocusStore = create((set, get) => ({
   },
 
   startSession: async () => {
-    const { duration, musicType, soundInstance } = get();
+    const { duration, musicType } = get();
     fireHaptic('medium');
 
     const startedAt = new Date();
@@ -104,6 +185,7 @@ export const useFocusStore = create((set, get) => ({
     // 1. Log start to backend
     try {
       const response = await API.post('/focus/start', {
+        ambienceType: musicType,
         musicType,
         duration
       });
@@ -117,24 +199,52 @@ export const useFocusStore = create((set, get) => ({
       isPaused: false,
       timeRemaining: duration,
       sessionId,
-      sessionStartTime: startedAt,
+      sessionStartTime: startedAt.toISOString(),
       ambientStats: {}
     });
+
+    await saveTimerState(get());
   },
 
   pauseSession: async () => {
     fireHaptic('light');
-    set({ isPaused: true, isPlaying: false });
+    const { duration, sessionStartTime } = get();
+    let elapsedSeconds = 0;
+    if (sessionStartTime) {
+      elapsedSeconds = Math.floor((Date.now() - new Date(sessionStartTime).getTime()) / 1000);
+    }
+    const remaining = Math.max(0, duration - elapsedSeconds);
+
+    set({
+      isPaused: true,
+      isPlaying: false,
+      timeRemaining: remaining
+    });
+
+    await saveTimerState(get());
   },
 
   resumeSession: async () => {
     fireHaptic('light');
-    set({ isPaused: false, isPlaying: true });
+    const { timeRemaining } = get();
+    
+    set({
+      isPaused: false,
+      isPlaying: true,
+      duration: timeRemaining,
+      sessionStartTime: new Date().toISOString()
+    });
+
+    await saveTimerState(get());
   },
 
   tick: () => {
-    const { timeRemaining, isActive, isPaused, ambientStats } = get();
-    if (!isActive || isPaused) return;
+    const { duration, isActive, isPaused, ambientStats, sessionStartTime } = get();
+    if (!isActive || isPaused || !sessionStartTime) return;
+
+    // Calculate actual elapsed seconds from the start timestamp
+    const elapsedSeconds = Math.floor((Date.now() - new Date(sessionStartTime).getTime()) / 1000);
+    const remaining = Math.max(0, duration - elapsedSeconds);
 
     // Dynamically increment active ambient sound listening duration in seconds
     const ambientState = useAmbientSoundStore.getState();
@@ -144,21 +254,26 @@ export const useFocusStore = create((set, get) => ({
       set({ ambientStats: currentStats });
     }
 
-    if (timeRemaining <= 1) {
-      set({ timeRemaining: 0 });
+    set({ timeRemaining: remaining });
+
+    if (remaining <= 0) {
       get().completeSession(true);
-    } else {
-      set({ timeRemaining: timeRemaining - 1 });
     }
   },
 
   completeSession: async (completed) => {
     const { sessionId, duration, timeRemaining, musicType, sessionStartTime, ambientStats } = get();
-    const elapsedSeconds = duration - timeRemaining;
-    const endedAt = new Date();
+    
+    // Exact duration calculations
+    let elapsedSeconds = duration - timeRemaining;
+    if (!completed && sessionStartTime) {
+      elapsedSeconds = Math.min(duration, Math.floor((Date.now() - new Date(sessionStartTime).getTime()) / 1000));
+    }
+    const durationMinutes = Math.max(0, elapsedSeconds / 60);
 
     fireHaptic('heavy');
     set({ isActive: false, isPaused: false });
+    await clearTimerState();
 
     if (completed) {
       // Confetti & Haptic celebration trigger
@@ -175,10 +290,10 @@ export const useFocusStore = create((set, get) => ({
 
       // Record to backend
       try {
-        const response = await API.post('/focus/complete', {
+        const response = await API.post('/focus/end', {
           sessionId,
           completed: true,
-          duration,
+          durationMinutes: duration / 60,
           ambientStats
         });
 
@@ -205,7 +320,7 @@ export const useFocusStore = create((set, get) => ({
           duration,
           completed: true,
           startedAt: sessionStartTime,
-          endedAt,
+          endedAt: new Date().toISOString(),
           xpEarned: 20,
           ambientStats
         };
@@ -227,10 +342,10 @@ export const useFocusStore = create((set, get) => ({
       }
 
       try {
-        await API.post('/focus/complete', {
+        await API.post('/focus/end', {
           sessionId,
           completed: false,
-          duration: elapsedSeconds,
+          durationMinutes,
           ambientStats
         });
       } catch (error) {
@@ -241,6 +356,7 @@ export const useFocusStore = create((set, get) => ({
     // Refresh gamification stats globally to show the newly awarded XP scores!
     await useGamificationStore.getState().fetchGamificationStats();
     await get().fetchFocusStats();
+    await useAnalyticsStore.getState().fetchProgressAnalytics();
   },
 
   // ─── AUDIO SYSTEM ───────────────────────────────────────────────────────────

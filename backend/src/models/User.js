@@ -15,7 +15,17 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true
+    required: function() { return this.provider === 'local'; }
+  },
+  firebaseUid: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  provider: {
+    type: String,
+    enum: ['local', 'firebase', 'google'],
+    default: 'local'
   },
   avatar: {
     type: String,

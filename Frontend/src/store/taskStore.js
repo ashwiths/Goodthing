@@ -10,6 +10,8 @@ import {
   scheduleStreakWarningNotification
 } from '../services/notificationService';
 import { useGamificationStore } from './gamificationStore';
+import { useAnalyticsStore } from './analyticsStore';
+
 
 export const useTaskStore = create((set, get) => ({
   tasks: [],
@@ -43,6 +45,7 @@ export const useTaskStore = create((set, get) => ({
 
       // Synchronize gamification engine statistics on load
       await useGamificationStore.getState().fetchGamificationStats();
+      await useAnalyticsStore.getState().fetchProgressAnalytics();
 
       return { success: true };
     } catch (error) {
@@ -77,6 +80,7 @@ export const useTaskStore = create((set, get) => ({
 
       // Refresh gamification stats (e.g. for pending counts)
       await useGamificationStore.getState().fetchGamificationStats();
+      await useAnalyticsStore.getState().fetchProgressAnalytics();
 
       return { success: true, task: newTask };
     } catch (error) {
@@ -131,6 +135,9 @@ export const useTaskStore = create((set, get) => ({
       // Re-evaluate smart productivity inactivity reminders
       await checkAndManageInactivityAlerts(get().tasks);
 
+      // Refresh progress analytics
+      await useAnalyticsStore.getState().fetchProgressAnalytics();
+
       return { success: true, task: updatedTask };
     } catch (error) {
       set({ loading: false });
@@ -161,6 +168,7 @@ export const useTaskStore = create((set, get) => ({
 
       // Refresh gamification stats to instantly reflect task deletion in the Productivity Hub UI!
       await useGamificationStore.getState().fetchGamificationStats();
+      await useAnalyticsStore.getState().fetchProgressAnalytics();
 
       return { success: true, message: response.data.message };
     } catch (error) {
