@@ -1,5 +1,5 @@
 import Task from '../models/Task.js';
-import { updateStreakAndScore, checkAndUnlockAchievements, recalculateUserStats } from '../services/gamificationEngine.js';
+import { recalculateUserStats } from '../services/gamificationEngine.js';
 
 // @desc    Create a new task
 // @route   POST /api/tasks
@@ -22,8 +22,11 @@ export const createTask = async (req, res) => {
       user: req.user._id,
     });
 
+    // Run gamification recalculation in the background to prevent blocking the HTTP response
     const offset = parseInt(req.headers['x-timezone-offset'] || '0', 10);
-    await recalculateUserStats(req.user._id, offset);
+    recalculateUserStats(req.user._id, offset).catch((err) => {
+      console.error('[Gamification] Background recalculation error on task creation:', err);
+    });
 
     res.status(201).json(task);
   } catch (error) {
@@ -80,25 +83,33 @@ export const updateTask = async (req, res) => {
     });
 
     // Handle completed toggle safely with completedAt timestamps
+    let completionStatusChanged = false;
     if (req.body.completed !== undefined) {
-      if (!wasCompleted && req.body.completed) {
-        task.completed = true;
-        task.completedAt = new Date();
-      } else if (wasCompleted && !req.body.completed) {
-        task.completed = false;
-        task.completedAt = null;
+      const isCompletedNow = !!req.body.completed;
+      if (wasCompleted !== isCompletedNow) {
+        task.completed = isCompletedNow;
+        task.completedAt = isCompletedNow ? new Date() : null;
+        completionStatusChanged = true;
       }
     }
 
     const updatedTask = await task.save();
 
-    // Trigger centralized gamification updates timezone-safely
-    const offset = parseInt(req.headers['x-timezone-offset'] || '0', 10);
-    const { newlyUnlocked } = await recalculateUserStats(req.user._id, offset);
+    let newlyUnlocked = [];
+    // Only await heavy gamification recalculations if the completion state actually changed
+    if (completionStatusChanged) {
+      const offset = parseInt(req.headers['x-timezone-offset'] || '0', 10);
+      try {
+        const statsResult = await recalculateUserStats(req.user._id, offset);
+        newlyUnlocked = statsResult.newlyUnlocked || [];
+      } catch (statsErr) {
+        console.error('[Gamification] Recalculation error on task update:', statsErr);
+      }
+    }
 
     // Return task object enriched with newly unlocked achievements
     const taskObj = updatedTask.toObject();
-    taskObj.newlyUnlocked = newlyUnlocked || [];
+    taskObj.newlyUnlocked = newlyUnlocked;
 
     res.status(200).json(taskObj);
   } catch (error) {
@@ -126,8 +137,11 @@ export const deleteTask = async (req, res) => {
     // 3. Delete task
     await task.deleteOne();
 
+    // Run gamification recalculation in the background to prevent blocking the HTTP response
     const offset = parseInt(req.headers['x-timezone-offset'] || '0', 10);
-    await recalculateUserStats(req.user._id, offset);
+    recalculateUserStats(req.user._id, offset).catch((err) => {
+      console.error('[Gamification] Background recalculation error on task deletion:', err);
+    });
 
     res.status(200).json({ message: 'Task removed successfully ✅' });
   } catch (error) {

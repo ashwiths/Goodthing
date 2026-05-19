@@ -2,101 +2,24 @@ import { create } from 'zustand';
 import { router } from 'expo-router';
 import { secureStorage } from '../utils/secureStorage.js';
 import API from '../api/api.js';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../config/firebase.js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const useAuthStore = create((set, get) => ({
   user: null,
   token: null,
   loading: false,
+  savedPassword: null,
 
   // Signup User
   signup: async (name, email, password) => {
     set({ loading: true });
-    let firebaseUser = null;
+    console.log(`[Auth Store] Signup initiated for: ${email}`);
     try {
-      // 1. Create Firebase Auth user first
-      console.log(`[Auth Signup] [Step 1/5] Initiating Firebase user creation for: ${email}`);
-      firebaseUser = await createUserWithEmailAndPassword(auth, email, password);
-      const firebaseUid = firebaseUser.user.uid;
-      console.log(`[Auth Signup] [Step 1/5] Firebase user created successfully. UID: ${firebaseUid}`);
-
-      // 2. Create profile in backend MongoDB
-      console.log('[Auth Signup] [Step 2/5] Sending backend profile registration request...');
-      const response = await API.post('/auth/register', {
-        name,
-        email,
-        firebaseUid,
-        provider: 'firebase'
-      });
-      console.log(`[Auth Signup] [Step 2/5] Backend registration response received. Status: ${response.status}`, response.data);
+      const response = await API.post('/auth/register', { name, email, password });
       const { success, token, user, message } = response.data;
 
       if (!success) {
-        throw new Error(message || 'Backend rejected registration');
-      }
-
-      // 3. Map to standardized user object
-      console.log(`[Auth Signup] [Step 3/5] Parsing JWT and user profile for MongoDB ID: ${user._id}`);
-      const mappedUser = {
-        uid: user._id,
-        fullName: user.name,
-        email: user.email,
-        avatar: user.avatar || '',
-        provider: 'firebase',
-      };
-
-      // 4. Save token and user to secure keychain
-      console.log('[Auth Signup] [Step 4/5] Storing JWT and user session in secureStorage...');
-      await secureStorage.setItem('token', token);
-      await secureStorage.setItem('user', JSON.stringify(mappedUser));
-
-      // 5. Complete signup
-      console.log('[Auth Signup] [Step 5/5] Signup completed successfully.');
-      set({ token, user: mappedUser, loading: false });
-      return { success: true, message };
-    } catch (error) {
-      set({ loading: false });
-      console.error('[Auth Signup] Signup flow encountered an error:', error.message);
-
-      // Rollback Firebase user if backend registration fails
-      if (firebaseUser && firebaseUser.user) {
-        console.warn(`[Auth Signup] Backend registration failed. Initiating rollback for Firebase UID: ${firebaseUser.user.uid}`);
-        try {
-          await firebaseUser.user.delete();
-          console.log('🔄 Rolled back Firebase user successfully after backend signup failure.');
-        } catch (rollbackErr) {
-          console.error('🔥 Failed to rollback Firebase user:', rollbackErr.message);
-        }
-      }
-
-      const message = error.response?.data?.error || error.message || 'Signup failed';
-      return { success: false, message };
-    }
-  },
-
-  // Login User
-  login: async (email, password) => {
-    set({ loading: true });
-    console.log(`[Auth Login] [Step 1/3] Initiating Firebase authentication for: ${email}`);
-    try {
-      // 1. Authenticate with Firebase first
-      const firebaseUser = await signInWithEmailAndPassword(auth, email, password);
-      const firebaseUid = firebaseUser.user.uid;
-      console.log(`[Auth Login] [Step 1/3] Firebase authentication succeeded. UID: ${firebaseUid}`);
-
-      // 2. Sync with MongoDB backend profile
-      console.log('[Auth Login] [Step 2/3] Syncing session with MongoDB backend profile...');
-      const response = await API.post('/auth/login', {
-        email,
-        firebaseUid,
-        provider: 'firebase'
-      });
-      console.log(`[Auth Login] [Step 2/3] Sync response received. Status: ${response.status}`, response.data);
-      const { success, token, user, message } = response.data;
-
-      if (!success) {
-        throw new Error(message || 'Backend rejected login sync');
+        throw new Error(message || 'Registration failed');
       }
 
       // Map to standardized user object
@@ -105,21 +28,100 @@ export const useAuthStore = create((set, get) => ({
         fullName: user.name,
         email: user.email,
         avatar: user.avatar || '',
-        provider: 'firebase',
+        provider: 'email',
       };
 
-      // 3. Save token and user to secure keychain
-      console.log('[Auth Login] [Step 3/3] Storing synced session in secureStorage...');
+      // Save token and user to secure storage
       await secureStorage.setItem('token', token);
       await secureStorage.setItem('user', JSON.stringify(mappedUser));
-      console.log('[Auth Login] Login completed successfully.');
+      await secureStorage.setItem('savedPassword', password);
+      await AsyncStorage.setItem('async_saved_password', password);
+      console.log('[Auth Store] Signup successful. Token saved. SavedPassword:', password);
 
-      set({ token, user: mappedUser, loading: false });
+      set({ token, user: mappedUser, savedPassword: password, loading: false });
       return { success: true, message };
     } catch (error) {
       set({ loading: false });
-      console.error('[Auth Login] Login flow encountered an error:', error.message);
+      console.error('[Auth Store] Signup error:', error.message);
+      const message = error.response?.data?.error || error.message || 'Signup failed';
+      return { success: false, message };
+    }
+  },
+
+  // Login User
+  login: async (email, password) => {
+    set({ loading: true });
+    console.log(`[Auth Store] Login initiated for: ${email}`);
+    try {
+      const response = await API.post('/auth/login', { email, password });
+      const { success, token, user, message } = response.data;
+
+      if (!success) {
+        throw new Error(message || 'Login failed');
+      }
+
+      // Map to standardized user object
+      const mappedUser = {
+        uid: user._id,
+        fullName: user.name,
+        email: user.email,
+        avatar: user.avatar || '',
+        provider: 'email',
+      };
+
+      // Save token and user to secure storage
+      await secureStorage.setItem('token', token);
+      await secureStorage.setItem('user', JSON.stringify(mappedUser));
+      await secureStorage.setItem('savedPassword', password);
+      await AsyncStorage.setItem('async_saved_password', password);
+      console.log('[Auth Store] Login successful. Token saved. SavedPassword:', password);
+
+      set({ token, user: mappedUser, savedPassword: password, loading: false });
+      return { success: true, message };
+    } catch (error) {
+      set({ loading: false });
+      console.error('[Auth Store] Login error:', error.message);
       const message = error.response?.data?.error || error.message || 'Login failed';
+      return { success: false, message };
+    }
+  },
+
+  // Request password reset verification code
+  forgotPassword: async (email) => {
+    set({ loading: true });
+    console.log(`[Auth Store] Requesting reset verification code for: ${email}`);
+    try {
+      const response = await API.post('/auth/forgot-password', { email });
+      const { success, message } = response.data;
+
+      set({ loading: false });
+      return { success, message };
+    } catch (error) {
+      set({ loading: false });
+      console.error('[Auth Store] Forgot password error:', error.message);
+      const message = error.response?.data?.error || error.message || 'Failed to send reset code';
+      return { success: false, message };
+    }
+  },
+
+  // Verify code and update password
+  resetPassword: async (email, code, password) => {
+    set({ loading: true });
+    console.log(`[Auth Store] Resetting password for: ${email} with code: ${code}`);
+    try {
+      const response = await API.post('/auth/reset-password', {
+        email,
+        token: code, // backend maps 'token' to the verification code
+        password
+      });
+      const { success, message } = response.data;
+
+      set({ loading: false });
+      return { success, message };
+    } catch (error) {
+      set({ loading: false });
+      console.error('[Auth Store] Reset password error:', error.message);
+      const message = error.response?.data?.error || error.message || 'Failed to reset password';
       return { success: false, message };
     }
   },
@@ -130,6 +132,11 @@ export const useAuthStore = create((set, get) => ({
     try {
       const token = await secureStorage.getItem('token');
       const userJSON = await secureStorage.getItem('user');
+      let savedPassword = await secureStorage.getItem('savedPassword');
+      if (!savedPassword) {
+        savedPassword = await AsyncStorage.getItem('async_saved_password');
+      }
+      console.log('[Auth Store] loadUser: retrieved savedPassword:', savedPassword);
 
       const isValidToken = token && token !== 'null' && token !== 'undefined' && token.trim() !== '';
       const isValidUser = userJSON && userJSON !== 'null' && userJSON !== 'undefined' && userJSON.trim() !== '';
@@ -147,7 +154,7 @@ export const useAuthStore = create((set, get) => ({
             provider: user.provider || 'email',
           };
           
-          set({ token, user: mappedUser, loading: false });
+          set({ token, user: mappedUser, savedPassword, loading: false });
           return { success: true };
         } catch (parseErr) {
           console.warn('[loadUser] Failed to parse cached user payload, clearing session.');
@@ -175,8 +182,10 @@ export const useAuthStore = create((set, get) => ({
     try {
       await secureStorage.removeItem('token');
       await secureStorage.removeItem('user');
+      await secureStorage.removeItem('savedPassword');
+      await AsyncStorage.removeItem('async_saved_password');
 
-      set({ token: null, user: null, loading: false });
+      set({ token: null, user: null, savedPassword: null, loading: false });
       
       // Auto-redirect user back to login screen on profile disconnection
       setTimeout(() => {

@@ -21,6 +21,8 @@ import { useAppTheme } from '../../hooks/useAppTheme';
 import { fireHaptic, fireSuccessHaptic } from '../../utils/haptics';
 import { useTaskStore } from '../../src/store/taskStore';
 import { useAuthStore } from '../../src/store/authStore';
+import { secureStorage } from '../../src/utils/secureStorage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAnalyticsStore } from '../../src/store/analyticsStore';
 import { useFocusStore } from '../../src/store/focusStore';
 import { ActivityIndicator } from 'react-native';
@@ -317,7 +319,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { P, getBlurIntensity, getGlowStyles, minimalMode } = useAppTheme();
   const { tasks, fetchTasks, loading, updateTask, deleteTask } = useTaskStore();
-  const { user } = useAuthStore();
+  const { user, savedPassword, logout } = useAuthStore();
 
   const {
     productivityPercentage,
@@ -483,11 +485,74 @@ export default function HomeScreen() {
     testBtnTxt: { fontSize: 13.5, fontWeight: '700', color: '#87C4FF' },
     clearBtn: { height: 50, borderRadius: 16, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, borderWidth: 1, borderColor: 'rgba(255,107,107,0.15)', backgroundColor: 'rgba(255,107,107,0.02)' },
     clearBtnTxt: { fontSize: 13.5, fontWeight: '700', color: '#FF6B6B' },
+    detailRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: 'rgba(255,255,255,0.06)',
+    },
+    detailLabel: {
+      fontSize: 13.5,
+      color: P.dim,
+      fontWeight: '500',
+    },
+    detailValue: {
+      fontSize: 14,
+      color: P.white,
+      fontWeight: '600',
+    },
+    logoutBtn: {
+      height: 50,
+      borderRadius: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      borderWidth: 1,
+      borderColor: 'rgba(255,107,107,0.2)',
+      backgroundColor: 'rgba(255,107,107,0.04)',
+      marginTop: 18,
+    },
+    logoutBtnTxt: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: '#FF6B6B',
+    },
   }), [P, getGlowStyles]);
 
   const [activeChip, setChip]     = useState('Focus');
   const [notifModalOpen, setNotifModalOpen] = useState(false);
   const [scheduledNotifs, setScheduledNotifs] = useState<any[]>([]);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [dbPassword, setDbPassword] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (profileModalOpen) {
+      const loadPasswordDirectly = async () => {
+        try {
+          let pass = await secureStorage.getItem('savedPassword');
+          if (!pass) {
+            pass = await AsyncStorage.getItem('async_saved_password');
+          }
+          console.log("👁️ [Profile Modal Direct Read] Password from storage:", pass);
+          if (pass) {
+            setDbPassword(pass);
+          } else if (savedPassword) {
+            setDbPassword(savedPassword);
+          }
+        } catch (e) {
+          console.warn("[Profile] Error reading password directly:", e);
+          if (savedPassword) {
+            setDbPassword(savedPassword);
+          }
+        }
+      };
+      loadPasswordDirectly();
+    }
+  }, [profileModalOpen, savedPassword]);
 
   const fetchScheduledNotifications = async () => {
     try {
@@ -608,11 +673,13 @@ export default function HomeScreen() {
                 <Ionicons name="notifications-outline" size={19} color={P.dim} />
                 <View style={s.notifDot} />
               </Pressable>
-              <LinearGradient colors={[P.blue, P.blue2]} style={s.avatar}>
-                <Text style={s.avatarTxt}>
-                  {user?.fullName ? user.fullName.trim()[0].toUpperCase() : 'P'}
-                </Text>
-              </LinearGradient>
+              <Pressable onPress={() => { fireHaptic('medium'); setProfileModalOpen(true); setShowPassword(false); }}>
+                <LinearGradient colors={[P.blue, P.blue2]} style={s.avatar}>
+                  <Text style={s.avatarTxt}>
+                    {user?.fullName ? user.fullName.trim()[0].toUpperCase() : 'P'}
+                  </Text>
+                </LinearGradient>
+              </Pressable>
             </View>
           </View>
         </FadeUp>
@@ -834,6 +901,100 @@ export default function HomeScreen() {
               </View>
             </ScrollView>
           </View>
+        </View>
+      </Modal>
+
+      {/* ── Profile Modal Sheet ───────────────────────────── */}
+      <Modal
+        transparent
+        visible={profileModalOpen}
+        animationType="slide"
+        onRequestClose={() => setProfileModalOpen(false)}
+      >
+        <View style={s.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setProfileModalOpen(false)}>
+            <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFill} />
+          </Pressable>
+          <Animated.View style={[s.modalSheet, { height: 420 }]}>
+            <BlurView intensity={getBlurIntensity(80)} tint="dark" style={StyleSheet.absoluteFill} />
+            
+            {/* Handle */}
+            <View style={s.modalHeader}>
+              <View style={s.modalHandle} />
+            </View>
+
+            {/* Title */}
+            <View style={s.modalTitleRow}>
+              <Text style={s.modalTitle}>User Profile</Text>
+              <Pressable style={s.modalCloseBtn} onPress={() => setProfileModalOpen(false)}>
+                <Ionicons name="close" size={18} color={P.white} />
+              </Pressable>
+            </View>
+
+            <View style={s.modalScroll}>
+              {/* Big Avatar */}
+              <View style={{ alignItems: 'center', marginBottom: 24 }}>
+                <LinearGradient colors={[P.blue, P.blue2]} style={{ width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                  <Text style={{ fontSize: 28, fontWeight: '800', color: P.white }}>
+                    {user?.fullName ? user.fullName.trim()[0].toUpperCase() : 'P'}
+                  </Text>
+                </LinearGradient>
+                <Text style={{ fontSize: 20, fontWeight: '800', color: P.white }}>{user?.fullName || 'Productivity Warrior'}</Text>
+                <Text style={{ fontSize: 13, color: P.dim, marginTop: 4 }}>{user?.email || 'No email'}</Text>
+              </View>
+
+              {/* Details */}
+              <View style={{ gap: 14, marginBottom: 28 }}>
+                {/* Name Row */}
+                <View style={s.detailRow}>
+                  <Text style={s.detailLabel}>Full Name</Text>
+                  <Text style={s.detailValue}>{user?.fullName || 'Productivity Warrior'}</Text>
+                </View>
+
+                {/* Email Row */}
+                <View style={s.detailRow}>
+                  <Text style={s.detailLabel}>Email Address</Text>
+                  <Text style={s.detailValue}>{user?.email || ''}</Text>
+                </View>
+
+                {/* Password Row */}
+                <View style={s.detailRow}>
+                  <Text style={s.detailLabel}>Password</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text style={s.detailValue}>
+                      {showPassword ? (dbPassword || savedPassword || 'Log in again to view') : '••••••••'}
+                    </Text>
+                    <Pressable onPress={() => { 
+                      fireHaptic('light'); 
+                      const next = !showPassword;
+                      console.log("👁️ [Profile Modal] Toggle pressed. Next state:", next, "savedPassword value:", savedPassword, "dbPassword:", dbPassword);
+                      setShowPassword(next); 
+                    }}>
+                      <Ionicons 
+                        name={showPassword ? "eye-off-outline" : "eye-outline"} 
+                        size={18} 
+                        color={P.blue} 
+                      />
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+
+              {/* Logout Button */}
+              <Pressable 
+                onPress={async () => {
+                  fireHaptic('heavy');
+                  setProfileModalOpen(false);
+                  setDbPassword(null);
+                  await logout();
+                }}
+                style={s.logoutBtn}
+              >
+                <Ionicons name="log-out-outline" size={16} color="#FF6B6B" />
+                <Text style={s.logoutBtnTxt}>Sign Out</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
         </View>
       </Modal>
     </View>

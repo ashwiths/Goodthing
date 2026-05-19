@@ -255,7 +255,7 @@ export default function AddTaskScreen() {
   const s = React.useMemo(() => StyleSheet.create({
     root: { flex: 1, backgroundColor: P.bg },
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, marginBottom: 24, zIndex: 10 },
-    closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: P.borderSub },
+    closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: P.borderSub, overflow: 'hidden' },
     headerTitle: { fontSize: 16, fontWeight: '700', color: P.white, letterSpacing: 0.5 },
     scroll: { paddingHorizontal: 22 },
   

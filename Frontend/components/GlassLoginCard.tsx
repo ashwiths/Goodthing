@@ -24,10 +24,6 @@ import { C } from '../constants/colors';
 import { useAuthStore } from '../src/store/authStore';
 import { Ionicons } from '@expo/vector-icons';
 import { secureStorage } from '../src/utils/secureStorage.js';
-// @ts-ignore
-import { useGoogleAuth } from '../src/services/googleAuth';
-import { sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from '../src/config/firebase';
 import { fireHaptic, fireSuccessHaptic } from '../utils/haptics';
 
 // ── Glow Input ────────────────────────────────────────────────────────────────
@@ -128,10 +124,14 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
   const [forgotError, setForgotError] = useState('');
   const [cooldown, setCooldown] = useState(0);
 
-  const { login, signup, loading } = useAuthStore();
+  const [forgotCode, setForgotCode] = useState('');
+  const [newResetPassword, setNewResetPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+
+  const { login, signup, forgotPassword, resetPassword, loading } = useAuthStore();
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: any;
     if (cooldown > 0) {
       interval = setInterval(() => {
         setCooldown((prev) => prev - 1);
@@ -161,88 +161,79 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
 
     setForgotLoading(true);
     setForgotError('');
-    setForgotSuccess(false);
     fireHaptic('light');
 
-    try {
-      await sendPasswordResetEmail(auth, trimmedEmail);
+    const result = await forgotPassword(trimmedEmail);
+    setForgotLoading(false);
+
+    if (result.success) {
       setForgotSuccess(true);
       fireSuccessHaptic();
       setCooldown(30);
-    } catch (err: any) {
-      console.warn('🔥 Firebase Forgot Password Error:', err.code, err.message);
+    } else {
       fireHaptic('heavy');
-      
-      switch (err.code) {
-        case 'auth/user-not-found':
-          setForgotError('No account found with this email.');
-          break;
-        case 'auth/invalid-email':
-          setForgotError('Please enter a valid email address.');
-          break;
-        case 'auth/too-many-requests':
-          setForgotError('Too many requests. Please wait a moment.');
-          break;
-        case 'auth/network-request-failed':
-          setForgotError('Network connection error. Check your internet.');
-          break;
-        default:
-          setForgotError(err.message || 'An error occurred. Please try again.');
-          break;
-      }
-    } finally {
-      setForgotLoading(false);
+      setForgotError(result.message);
     }
   };
 
-  const { handleGoogleSignIn } = useGoogleAuth();
-  const [googleLoading, setGoogleLoading] = useState(false);
+  const handleConfirmReset = async () => {
+    if (forgotLoading) return;
 
-  const handleGoogleLogin = async () => {
-    setGoogleLoading(true);
-    try {
-      const user = await handleGoogleSignIn();
+    const trimmedCode = forgotCode.trim();
+    const trimmedPassword = newResetPassword.trim();
 
-      if (user) {
-        console.log('✅ FIREBASE GOOGLE LOGIN SUCCESS');
-        console.log(user);
-
-        // Map Firebase user object to application's standardized user interface
-        const localUser = {
-          uid: user.uid,
-          fullName: user.displayName || user.email?.split('@')[0] || 'Productivity Warrior',
-          email: user.email || '',
-          avatar: user.photoURL || '',
-          provider: 'google',
-        };
-
-        // Persist session securely
-        await secureStorage.setItem('token', 'firebase-google-auth-token');
-        await secureStorage.setItem('user', JSON.stringify(localUser));
-
-        // Update Zustand global store state
-        useAuthStore.setState({
-          token: 'firebase-google-auth-token',
-          user: localUser,
-        });
-
-        Alert.alert(
-          'Google Sign-In Success! 🎉',
-          `Welcome, ${localUser.fullName}!\n\nEmail: ${localUser.email}`
-        );
-
-        // Redirect to Home Tabs screen
-        router.replace('/(tabs)');
-      }
-    } catch (err: any) {
-      console.error('🔥 GOOGLE LOGIN ERROR:', err);
-      Alert.alert(
-        'Sign-In Failed ❌',
-        err.message || 'An error occurred during Google authentication.'
-      );
-    } finally {
-      setGoogleLoading(false);
+    if (!trimmedCode || !trimmedPassword) {
+      setForgotError('Please enter both the reset code and your new password.');
+      fireHaptic('medium');
+      return;
     }
+
+    if (trimmedCode.length !== 6) {
+      setForgotError('Verification code must be exactly 6 characters.');
+      fireHaptic('medium');
+      return;
+    }
+
+    if (trimmedPassword.length < 6) {
+      setForgotError('New password must be at least 6 characters.');
+      fireHaptic('medium');
+      return;
+    }
+
+    setForgotLoading(true);
+    setForgotError('');
+    fireHaptic('light');
+
+    const result = await resetPassword(forgotEmail.trim(), trimmedCode, trimmedPassword);
+    setForgotLoading(false);
+
+    if (result.success) {
+      fireSuccessHaptic();
+      Alert.alert(
+        'Password Reset Success! 🎉',
+        'Your password has been updated. You can now log in with your new password.',
+        [
+          {
+            text: 'Back to Login',
+            onPress: () => {
+              setIsForgotPassword(false);
+              setForgotEmail('');
+              setForgotCode('');
+              setNewResetPassword('');
+              setForgotSuccess(false);
+              setForgotError('');
+            }
+          }
+        ]
+      );
+    } else {
+      fireHaptic('heavy');
+      setForgotError(result.message);
+    }
+  };
+
+  const handleGoogleLogin = () => {
+    Alert.alert('Google Sign-In', 'Google Sign-In is coming soon with pure MongoDB support!');
   };
 
   // Card slide-up
@@ -262,32 +253,75 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
   const handleLogin = async () => {
     if (loading) return;
 
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Missing Fields', 'Please enter your email and password.');
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
+
+    if (!trimmedEmail || !trimmedPassword) {
+      setAuthError('Please enter both your email and password.');
+      fireHaptic('medium');
       return;
     }
-    
-    const result = await login(email.trim(), password.trim());
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setAuthError('Please enter a valid email address.');
+      fireHaptic('medium');
+      return;
+    }
+
+    setAuthError('');
+    fireHaptic('light');
+
+    const result = await login(trimmedEmail, trimmedPassword);
     if (result.success) {
       router.replace('/character-select' as any);
     } else {
-      Alert.alert('Authentication Failed ❌', result.message);
+      setAuthError(result.message);
+      fireHaptic('heavy');
     }
   };
 
   const handleSignup = async () => {
     if (loading) return;
 
-    if (!name.trim() || !email.trim() || !password.trim()) {
-      Alert.alert('Missing Fields', 'Please enter your name, email, and password.');
+    console.log({
+      name,
+      email,
+      password
+    });
+
+    if (!name?.trim() || !email?.trim() || !password?.trim()) {
+      setAuthError('Please provide all required fields');
+      fireHaptic('medium');
       return;
     }
 
-    const result = await signup(name.trim(), email.trim(), password.trim());
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setAuthError('Please enter a valid email address.');
+      fireHaptic('medium');
+      return;
+    }
+
+    if (trimmedPassword.length < 6) {
+      setAuthError('Password must be at least 6 characters.');
+      fireHaptic('medium');
+      return;
+    }
+
+    setAuthError('');
+    fireHaptic('light');
+
+    const result = await signup(trimmedName, trimmedEmail, trimmedPassword);
     if (result.success) {
       router.replace('/character-select' as any);
     } else {
-      Alert.alert('Signup Failed ❌', result.message);
+      setAuthError(result.message);
+      fireHaptic('heavy');
     }
   };
 
@@ -323,58 +357,126 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
 
         {isForgotPassword ? (
           <>
-            {/* Heading */}
-            <Text style={styles.heading}>Reset Password</Text>
-            <Text style={styles.subtitle}>
-              Enter your email to receive password reset instructions.
-            </Text>
+            {!forgotSuccess ? (
+              <>
+                {/* Heading */}
+                <Text style={styles.heading}>Reset Password</Text>
+                <Text style={styles.subtitle}>
+                  Enter your email to receive a password reset verification code.
+                </Text>
 
-            <View style={{ height: 24 }} />
+                <View style={{ height: 24 }} />
 
-            <GlowInput
-              value={forgotEmail}
-              onChangeText={(txt) => {
-                setForgotEmail(txt);
-                setForgotError('');
-              }}
-              placeholder="Email address"
-              keyboardType="email-address"
-              delay={100}
-            />
+                <GlowInput
+                  value={forgotEmail}
+                  onChangeText={(txt) => {
+                    setForgotEmail(txt);
+                    setForgotError('');
+                  }}
+                  placeholder="Email address"
+                  keyboardType="email-address"
+                  delay={100}
+                />
 
-            {forgotError ? (
-              <View style={styles.errorContainer}>
-                <Ionicons name="alert-circle-outline" size={16} color="#FF6B6B" />
-                <Text style={styles.errorText}>{forgotError}</Text>
-              </View>
-            ) : null}
+                {forgotError ? (
+                  <View style={styles.errorContainer}>
+                    <Ionicons name="alert-circle-outline" size={16} color="#FF6B6B" />
+                    <Text style={styles.errorText}>{forgotError}</Text>
+                  </View>
+                ) : null}
 
-            {forgotSuccess ? (
-              <View style={styles.successContainer}>
-                <Ionicons name="checkmark-circle-outline" size={16} color="#4ECDC4" />
-                <Text style={styles.successText}>Password reset link sent successfully 📩</Text>
-              </View>
-            ) : null}
+                <View style={{ height: 22 }} />
 
-            <View style={{ height: 22 }} />
+                {/* Action Button */}
+                <ScaleBtn onPress={handleForgotPassword} delay={180} disabled={forgotLoading || cooldown > 0}>
+                  <LinearGradient
+                    colors={forgotLoading || cooldown > 0 ? ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.05)'] : [C.blue500, C.blue700]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[styles.loginBtn, (forgotLoading || cooldown > 0) && { opacity: 0.6 }]}
+                  >
+                    {forgotLoading ? (
+                      <ActivityIndicator color={C.white} size="small" />
+                    ) : (
+                      <Text style={styles.loginBtnText}>
+                        {cooldown > 0 ? `Resend in ${cooldown}s` : 'Send Reset Code'}
+                      </Text>
+                    )}
+                  </LinearGradient>
+                </ScaleBtn>
+              </>
+            ) : (
+              <>
+                {/* Heading */}
+                <Text style={styles.heading}>Confirm Reset</Text>
+                <Text style={styles.subtitle}>
+                  Enter the 6-character code sent to your email and your new password.
+                </Text>
 
-            {/* Action Button */}
-            <ScaleBtn onPress={handleForgotPassword} delay={180} disabled={forgotLoading || cooldown > 0}>
-              <LinearGradient
-                colors={forgotLoading || cooldown > 0 ? ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.05)'] : [C.blue500, C.blue700]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.loginBtn, (forgotLoading || cooldown > 0) && { opacity: 0.6 }]}
-              >
-                {forgotLoading ? (
-                  <ActivityIndicator color={C.white} size="small" />
-                ) : (
-                  <Text style={styles.loginBtnText}>
-                    {cooldown > 0 ? `Resend in ${cooldown}s` : 'Send Reset Link'}
+                <View style={{ height: 24 }} />
+
+                <GlowInput
+                  value={forgotCode}
+                  onChangeText={(txt) => {
+                    setForgotCode(txt);
+                    setForgotError('');
+                  }}
+                  placeholder="Verification Code"
+                  delay={100}
+                />
+                <View style={{ height: 12 }} />
+                <GlowInput
+                  value={newResetPassword}
+                  onChangeText={(txt) => {
+                    setNewResetPassword(txt);
+                    setForgotError('');
+                  }}
+                  placeholder="New Password"
+                  secure
+                  delay={150}
+                />
+
+                {forgotError ? (
+                  <View style={styles.errorContainer}>
+                    <Ionicons name="alert-circle-outline" size={16} color="#FF6B6B" />
+                    <Text style={styles.errorText}>{forgotError}</Text>
+                  </View>
+                ) : null}
+
+                <View style={{ height: 22 }} />
+
+                {/* Confirm Action Button */}
+                <ScaleBtn onPress={handleConfirmReset} delay={180} disabled={forgotLoading}>
+                  <LinearGradient
+                    colors={[C.blue500, C.blue700]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.loginBtn}
+                  >
+                    {forgotLoading ? (
+                      <ActivityIndicator color={C.white} size="small" />
+                    ) : (
+                      <Text style={styles.loginBtnText}>Reset Password</Text>
+                    )}
+                  </LinearGradient>
+                </ScaleBtn>
+
+                <View style={{ height: 12 }} />
+
+                {/* Resend button */}
+                <Pressable
+                  onPress={handleForgotPassword}
+                  disabled={cooldown > 0 || forgotLoading}
+                  style={({ pressed }) => [
+                    { alignSelf: 'center', opacity: (cooldown > 0 || pressed) ? 0.5 : 1 }
+                  ]}
+                >
+                  <Text style={[styles.forgotText, { color: C.text70, alignSelf: 'center' }]}>
+                    {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend Verification Code'}
                   </Text>
-                )}
-              </LinearGradient>
-            </ScaleBtn>
+                </Pressable>
+              </>
+            )}
 
             <View style={{ height: 20 }} />
 
@@ -385,6 +487,8 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
                 fireHaptic('light');
                 setIsForgotPassword(false);
                 setForgotEmail('');
+                setForgotCode('');
+                setNewResetPassword('');
                 setForgotError('');
                 setForgotSuccess(false);
               }}
@@ -407,7 +511,10 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
               <>
                 <GlowInput
                   value={name}
-                  onChangeText={setName}
+                  onChangeText={(txt) => {
+                    setName(txt);
+                    setAuthError('');
+                  }}
                   placeholder="Full name"
                   delay={BASE - 40}
                 />
@@ -417,7 +524,10 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
 
             <GlowInput
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(txt) => {
+                setEmail(txt);
+                setAuthError('');
+              }}
               placeholder="Email address"
               keyboardType="email-address"
               delay={BASE}
@@ -425,11 +535,21 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
             <View style={{ height: 12 }} />
             <GlowInput
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(txt) => {
+                setPassword(txt);
+                setAuthError('');
+              }}
               placeholder="Password"
               secure
               delay={BASE + 80}
             />
+
+            {authError ? (
+              <View style={styles.errorContainer}>
+                <Ionicons name="alert-circle-outline" size={16} color="#FF6B6B" />
+                <Text style={styles.errorText}>{authError}</Text>
+              </View>
+            ) : null}
 
             {/* Forgot */}
             {!isSignup && (
@@ -441,6 +561,7 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
                   setForgotEmail('');
                   setForgotError('');
                   setForgotSuccess(false);
+                  setAuthError('');
                 }}
               >
                 <Text style={styles.forgotText}>Forgot password?</Text>
@@ -457,11 +578,13 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
                 end={{ x: 1, y: 1 }}
                 style={[styles.loginBtn, loading && { opacity: 0.6 }]}
               >
-                <Text style={styles.loginBtnText}>
-                  {isSignup 
-                    ? (loading ? 'Creating Account...' : 'Create Account') 
-                    : (loading ? 'Signing In...' : 'Sign In')}
-                </Text>
+                {loading ? (
+                  <ActivityIndicator color={C.white} size="small" />
+                ) : (
+                  <Text style={styles.loginBtnText}>
+                    {isSignup ? 'Create Account' : 'Sign In'}
+                  </Text>
+                )}
               </LinearGradient>
             </ScaleBtn>
 
@@ -487,12 +610,13 @@ export function GlassLoginCard({ entryDelay = 500 }: GlassLoginCardProps) {
 
             {/* Toggle Mode Link */}
             <Pressable 
-              style={styles.toggleModeRow} 
+              style={styles.toggleModeRow}
               onPress={() => {
                 setIsSignup(!isSignup);
                 setName('');
                 setEmail('');
                 setPassword('');
+                setAuthError('');
               }}
             >
               <Text style={styles.toggleModeText}>

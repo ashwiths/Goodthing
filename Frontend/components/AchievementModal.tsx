@@ -74,11 +74,11 @@ export function AchievementModal() {
   }));
 
   const handleClose = () => {
-    scale.value = withTiming(0, { duration: 250 }, () => {
-      opacity.value = withTiming(0, { duration: 100 }, () => {
-        clearUnlockedBadgePopup();
-      });
-    });
+    scale.value = withTiming(0, { duration: 250 });
+    opacity.value = withTiming(0, { duration: 250 });
+    setTimeout(() => {
+      clearUnlockedBadgePopup();
+    }, 250);
   };
 
   if (!newlyUnlockedBadge) return null;

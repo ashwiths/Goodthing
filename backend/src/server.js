@@ -110,7 +110,7 @@ if (!process.env.VERCEL) {
     .then(() => {
       console.log("MongoDB Connected Locally ✅");
 
-      app.listen(PORT, () => {
+      app.listen(PORT, '0.0.0.0', () => {
         console.log(`Local Server running on port ${PORT} 🚀`);
       });
     })
